@@ -10,8 +10,8 @@ import (
 
 	"github.com/cloudinary/cloudinary-go/v2"
 	"github.com/cloudinary/cloudinary-go/v2/api/uploader"
+	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/joho/godotenv"
-	_ "github.com/lib/pq" // Driver de PostgreSQL
 )
 
 func main() {
@@ -45,7 +45,7 @@ func main() {
 	}
 
 	// --- 4. Conectar a la Base de Datos ---
-	db, err := sql.Open("pgx", os.Getenv("DB_CONNECTION_STRING")) // CORRECCIÓN: Usar el nombre de driver 'pgx'
+	db, err := sql.Open("pgx", os.Getenv("DB_CONNECTION_STRING"))
 	if err != nil {
 		log.Fatalf("Fallo al conectar a la base de datos: %v", err)
 	}
@@ -100,28 +100,23 @@ func main() {
 	}
 
 	log.Printf("Video subido exitosamente. URL: %s", uploadResult.SecureURL)
-	// CORRECCIÓN 2: La duración ahora está en el campo Video.
-	log.Printf("Duración: %f segundos, Tamaño: %d bytes", uploadResult.Video.Duration, uploadResult.Bytes)
 
-	// Generar URL para el thumbnail (primera frame del video como imagen JPG)
-	// CORRECCIÓN 3: cld.Image ahora devuelve (asset, error).
-	imageAsset, err := cld.Image(uploadResult.PublicID)
-	var thumbnailURL string
-	if err == nil {
-		thumbnailURL, err = imageAsset.
-			SetFormat("jpg").
-			AddTransformation("w_300,c_fill").
-			String()
+	// CORRECCIÓN FINAL: La duración está en `Response.Duration` según el JSON de depuración.
+	// El SDK de Cloudinary no mapea esto directamente, así que lo accedemos como un mapa.
+	duration := 0.0
+	if respMap, ok := uploadResult.Response.(map[string]interface{}); ok {
+		if d, ok := respMap["duration"].(float64); ok {
+			duration = d
+		}
 	}
-	if err != nil {
-		log.Printf("Advertencia: No se pudo generar la URL del thumbnail: %v", err)
-		thumbnailURL = "" // Si falla, no asignamos thumbnail
-	} else {
-		log.Printf("URL del thumbnail: %s", thumbnailURL)
-	}
+	log.Printf("Duración: %f segundos, Tamaño: %d bytes", duration, uploadResult.Bytes)
+
+	// --- Usar una URL de thumbnail estática ---
+	// En lugar de generar una miniatura, asignamos una imagen fija que ya exista.
+	thumbnailURL := "https://res.cloudinary.com/dlnm7yxt3/image/upload/v1762540397/placeholder_thumbnail.jpg" // <-- CAMBIA ESTO por la URL de tu imagen
+	log.Printf("Usando URL de thumbnail estática: %s", thumbnailURL)
 
 	// --- 6. Guardar el registro en la base de datos ---
-	// Insertar en la tabla 'contenidos'
 	stmt, err := db.Prepare(`
 		INSERT INTO contenidos (
 			titulo, descripcion, id_autor, id_tipo_contenido, id_estado_contenido,
@@ -135,33 +130,13 @@ func main() {
 	defer stmt.Close()
 
 	var newVideoID int
-	err = stmt.QueryRow(
-		title, description, userID, videoContentTypeID, publishedContentStateID,
-		uploadResult.SecureURL, thumbnailURL, int(uploadResult.Video.Duration), uploadResult.Bytes,
-	).Scan(&newVideoID)
+	err = stmt.QueryRow(title, description, userID, videoContentTypeID, publishedContentStateID, uploadResult.SecureURL, thumbnailURL, int(duration), uploadResult.Bytes).Scan(&newVideoID)
 	if err != nil {
 		log.Fatalf("Fallo al insertar el registro del video en la base de datos: %v", err)
 	}
 
 	log.Printf("Registro del video guardado en la base de datos con ID: %d", newVideoID)
+
 	log.Println("¡Proceso completado!")
 }
 
-/*
---- CÓMO EJECUTAR ESTE SCRIPT ---
-
-1. Asegúrate de tener un video en tu PC. Por ejemplo: /home/usuario/videos/mi_video.mp4
-
-2. Abre tu terminal y navega al directorio `lib/app` de tu proyecto:
-   cd /run/media/lincj/datos/flutter_practica (2)/lib/app
-
-3. Ejecuta el script pasándole la ruta del video y el ID de un usuario existente en tu tabla `usuarios`.
-   Por ejemplo, si el usuario con id_usuario = 1 existe:
-
-   go run ./upload_tool.go /ruta/a/tu/video.mp4 1
-
-   Ejemplo real:
-   go run ./upload_tool.go /home/lincj/Descargas/sample.mp4 1
-
-4. El script subirá el video y guardará el registro. Revisa tu base de datos y Cloudinary para confirmar.
-*/

@@ -282,6 +282,7 @@ func handleGetVideosFeed(c *gin.Context) {
 			c.titulo,
 			c.descripcion,
 			c.url_contenido,
+			c.url_thumbnail, -- CORRECCIÓN: Añadir la URL de la miniatura a la consulta
 			COALESCE(c.duracion_segundos, 0),
 			COALESCE(COUNT(DISTINCT l.id_interaccion), 0) AS likes_count,
 			COALESCE(COUNT(DISTINCT comm.id_comentario), 0) AS comments_count
@@ -294,7 +295,7 @@ func handleGetVideosFeed(c *gin.Context) {
 		WHERE
 			c.id_tipo_contenido = $2 AND c.id_estado_contenido = $3
 		GROUP BY
-			c.id_contenido, c.titulo, c.descripcion, c.url_contenido, c.duracion_segundos, c.fecha_publicacion
+			c.id_contenido, c.titulo, c.descripcion, c.url_contenido, c.url_thumbnail, c.duracion_segundos, c.fecha_publicacion
 		ORDER BY
 			c.fecha_publicacion DESC;
 	`, likeInteractionTypeID, videoContentTypeID, publishedContentStateID)
@@ -308,8 +309,8 @@ func handleGetVideosFeed(c *gin.Context) {
 	var videosForResponse []gin.H
 	for rows.Next() {
 		var id, duration, likes, comments int
-		var title, description, videoURL string
-		if err := rows.Scan(&id, &title, &description, &videoURL, &duration, &likes, &comments); err != nil {
+		var title, description, videoURL, thumbnailURL string // CORRECCIÓN: Añadir variable para la miniatura
+		if err := rows.Scan(&id, &title, &description, &videoURL, &thumbnailURL, &duration, &likes, &comments); err != nil {
 			log.Printf("Error al escanear la fila del video: %v", err)
 			continue // Salta este video si hay un error y continúa con el siguiente
 		}
@@ -319,6 +320,7 @@ func handleGetVideosFeed(c *gin.Context) {
 			"title":         title,                 // Agregamos el título
 			"description":   description,           // La descripción del contenido
 			"video_url":     videoURL,
+			"thumbnail_url": thumbnailURL, // CORRECCIÓN: Incluir la URL de la miniatura en la respuesta
 			"likes":         likes,
 			"comments":      comments,
 			"is_liked":      false,

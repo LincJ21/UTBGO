@@ -32,7 +32,7 @@ func getDBConnection() (*sql.DB, error) {
 
 func main() {
 	// Cargar variables de entorno desde el archivo .env
-	err := godotenv.Load("../.env") // CORRECCIÓN: La ruta correcta al .env en lib/app
+	err := godotenv.Load("../../.env") // CORRECCIÓN: La ruta correcta al .env desde lib/app
 	if err != nil {
 		log.Fatalf("Error al cargar el archivo .env: %v", err)
 	}
