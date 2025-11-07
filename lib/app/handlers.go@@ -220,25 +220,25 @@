@@ -35,12 +35,9 @@ func handleVerifyToken(c *gin.Context) {
 	}
 
 	// 1. Verificar el idToken usando la librería de Google.
-	// El clientID aquí debe ser el ID de cliente de la "Aplicación Web" configurado en Google Cloud,
-	// que actúa como la audiencia (`aud`) del token.
-	payload, err := idtoken.Validate(context.Background(), idToken, os.Getenv("GOOGLE_CLIENT_ID"))
+	// El clientID aquí debe ser el de tu aplicación de Android.
+	payload, err := idtoken.Validate(context.Background(), idToken, os.Getenv("GOOGLE_CLIENT_ID_ANDROID"))
 	if err != nil {
-		// ¡AÑADIDO! Imprimimos el error detallado en la consola del servidor.
-		log.Printf("Error al validar el token de Google: %v", err)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Token de Google inválido: " + err.Error()})
 		return
 	}
@@ -130,7 +127,6 @@ func handleGetProfile(c *gin.Context) {
 	// La columna id_usuario es numérica, por lo que pasamos el userID como int.
 	err := DB.QueryRowContext(c, "SELECT u.id_usuario, p.nombre, u.email, p.avatar_url FROM usuarios u JOIN perfiles p ON u.id_usuario = p.id_usuario WHERE u.id_usuario = $1", userID).Scan(&user.ID, &user.Username, &user.Email, &user.AvatarURL)
 
-	user.ID = userID // Aseguramos que el ID del usuario se incluya en la respuesta.
 	if err != nil {
 		if err == sql.ErrNoRows {
 			c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
@@ -192,7 +188,6 @@ func handleUploadAvatar(c *gin.Context) {
 }
 
 func ensureVideoExists(videoID string) *Video {
-	// Este bloqueo asegura que la verificación y creación del video sea atómica.
 	Mu.Lock()
 	defer Mu.Unlock()
 	if _, ok := Videos[videoID]; !ok {
@@ -203,34 +198,29 @@ func ensureVideoExists(videoID string) *Video {
 
 func handleToggleLike(c *gin.Context) {
 	videoID := c.Param("id")
-	// ensureVideoExists ya bloquea el mutex, así que no necesitamos hacerlo aquí de nuevo.
-	// Sin embargo, para mantener la lógica clara, bloquearemos el mutex durante toda la operación.
+	video := ensureVideoExists(videoID)
+
 	Mu.Lock()
 	defer Mu.Unlock()
 
-	// Aseguramos que el video exista en nuestro mapa simulado.
-	if _, ok := Videos[videoID]; !ok {
-		Videos[videoID] = &Video{ID: videoID, Likes: 0, IsLiked: false, IsBookmarked: false}
-	}
-	video := Videos[videoID]
-
-	// Modificamos el estado del video.
 	video.IsLiked = !video.IsLiked
 	if video.IsLiked {
 		video.Likes++
 	} else {
 		video.Likes--
 	}
+
 	log.Printf("Video %s toggled like. New state: Liked=%v, Likes=%d", videoID, video.IsLiked, video.Likes)
 	c.JSON(http.StatusOK, video)
 }
 
 func handleToggleBookmark(c *gin.Context) {
 	videoID := c.Param("id")
+	video := ensureVideoExists(videoID)
+
 	Mu.Lock()
 	defer Mu.Unlock()
 
-	video := ensureVideoExists(videoID) // Esta llamada ahora es segura dentro del bloqueo.
 	video.IsBookmarked = !video.IsBookmarked
 
 	log.Printf("Video %s toggled bookmark. New state: Bookmarked=%v", videoID, video.IsBookmarked)
@@ -275,56 +265,29 @@ func handleSearchVideos(c *gin.Context) {
 // handleGetVideosFeed devuelve una lista de videos para el feed principal.
 // TODO: Implementar la lógica para obtener videos desde la base de datos.
 func handleGetVideosFeed(c *gin.Context) {
-	// Consulta la tabla 'contenidos' y calcula likes/comentarios dinámicamente.
-	rows, err := DB.QueryContext(c, `
-		SELECT
-			c.id_contenido,
-			c.titulo,
-			c.descripcion,
-			c.url_contenido,
-			COALESCE(c.duracion_segundos, 0),
-			COALESCE(COUNT(DISTINCT l.id_interaccion), 0) AS likes_count,
-			COALESCE(COUNT(DISTINCT comm.id_comentario), 0) AS comments_count
-		FROM
-			contenidos c
-		LEFT JOIN
-			interacciones l ON c.id_contenido = l.id_contenido AND l.id_tipo_interaccion = $1
-		LEFT JOIN
-			comentarios comm ON c.id_contenido = comm.id_contenido
-		WHERE
-			c.id_tipo_contenido = $2 AND c.id_estado_contenido = $3
-		GROUP BY
-			c.id_contenido, c.titulo, c.descripcion, c.url_contenido, c.duracion_segundos, c.fecha_publicacion
-		ORDER BY
-			c.fecha_publicacion DESC;
-	`, likeInteractionTypeID, videoContentTypeID, publishedContentStateID)
-	if err != nil {
-		log.Printf("Error al consultar videos desde la base de datos: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al obtener los videos"})
-		return
-	}
-	defer rows.Close()
-
-	var videosForResponse []gin.H
-	for rows.Next() {
-		var id, duration, likes, comments int
-		var title, description, videoURL string
-		if err := rows.Scan(&id, &title, &description, &videoURL, &duration, &likes, &comments); err != nil {
-			log.Printf("Error al escanear la fila del video: %v", err)
-			continue // Salta este video si hay un error y continúa con el siguiente
-		}
-
-		videosForResponse = append(videosForResponse, gin.H{
-			"id":            fmt.Sprintf("%d", id), // El ID ahora viene de la BD
-			"title":         title,                 // Agregamos el título
-			"description":   description,           // La descripción del contenido
-			"video_url":     videoURL,
-			"likes":         likes,
-			"comments":      comments,
+	// Por ahora, devolvemos una lista de videos de ejemplo (hardcodeados).
+	// Estos videos son de Pexels, pero servidos a través de nuestra API.
+	// Esto permite que la app de Flutter funcione mientras se desarrolla la lógica de la BD.
+	sampleVideos := []gin.H{
+		{
+			"id":            "1",
+			"description":   "Video de ejemplo 1: Olas del mar",
+			"video_url":     "https://videos.pexels.com/video-files/853881/853881-hd.mp4",
+			"likes":         123,
+			"comments":      45,
 			"is_liked":      false,
 			"is_bookmarked": false,
-		})
+		},
+		{
+			"id":            "2",
+			"description":   "Video de ejemplo 2: Nubes en el cielo",
+			"video_url":     "https://videos.pexels.com/video-files/855384/855384-hd.mp4",
+			"likes":         456,
+			"comments":      78,
+			"is_liked":      true,
+			"is_bookmarked": false,
+		},
 	}
 
-	c.JSON(http.StatusOK, gin.H{"videos": videosForResponse})
+	c.JSON(http.StatusOK, gin.H{"videos": sampleVideos})
 }

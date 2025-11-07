@@ -24,7 +24,9 @@ func InitDB(connStr string) {
 	}
 
 	// Usamos PingContext para verificar que la conexión a la base de datos es válida.
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	// Aumentamos el timeout a 30 segundos. Las conexiones iniciales a servicios en la nube
+	// pueden ser lentas si la base de datos está "dormida". 5 segundos puede ser muy poco.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	if err = DB.PingContext(ctx); err != nil {
 		log.Fatalf("Error al conectar con la base de datos: %v", err)

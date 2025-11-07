@@ -66,19 +66,24 @@ class _VideosScreenState extends State<VideosScreen> {
   /// Esta función se usa tanto para la carga inicial como para cargar más videos.
   Future<void> _fetchVideos() async {
     // Si no hay más videos por cargar, no hace nada.
-    // Conexión directa a Pexels
-    const String pexelsApiKey = "gg5qq7E08JCO1JhBgnaJfXphzQRqs806tqLQDJQtDnAoCxzosQs1XfYB";
-    final Uri uri = Uri.parse(
-      'https://api.pexels.com/videos/popular?per_page=5&page=$_currentPage',
-    );
+    // --- CORRECCIÓN: Apuntar al backend local en lugar de Pexels ---
+    // La API de Pexels se usaba para obtener videos, pero los likes/bookmarks
+    // apuntaban a nuestro backend. Esto es inconsistente.
+    // Ahora apuntamos a una nueva ruta en nuestro backend: /api/videos/feed
+    // NOTA: Debes implementar esta ruta en tu backend de Go.
+    const String baseUrl = 'http://10.0.2.2:8080/api';
+    final Uri uri = Uri.parse('$baseUrl/videos/feed?page=$_currentPage');
 
     try {
-      final response = await http.get(uri, headers: {'Authorization': pexelsApiKey});
+      // En una app real, enviarías el token JWT aquí si el feed es privado.
+      final response = await http.get(uri);
 
       if (response.statusCode == 200) {
         final Map<String, dynamic> data = json.decode(response.body);
-        final List<dynamic> videoJson = data['videos'];
-        final newVideos = videoJson.map((json) => VideoModel.fromPexelsJson(json)).toList();
+        final List<dynamic> videoJson =
+            data['videos']; // Asumimos que el backend devuelve { "videos": [...] }
+        // Usamos un constructor `fromBackendJson` que debes crear en tu VideoModel.
+        final newVideos = videoJson.map((json) => VideoModel.fromBackendJson(json)).toList();
 
         // Actualiza el estado del widget dentro de setState para que la UI se redibuje.
         setState(() {
@@ -99,7 +104,7 @@ class _VideosScreenState extends State<VideosScreen> {
           _isLoading = false;
           _isMoreLoading = false;
         });
-        throw Exception('Fallo al cargar videos de Pexels: ${response.statusCode}');
+        throw Exception('Fallo al cargar videos del backend: ${response.statusCode}');
       }
     } catch (e) {
       // Si ocurre cualquier otro error (ej. sin conexión a internet), lo muestra en la consola.

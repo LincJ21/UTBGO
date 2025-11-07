@@ -35,6 +35,21 @@ class VideoModel {
     );
   }
 
+  /// Constructor para crear un [VideoModel] desde el JSON que envía nuestro backend de Go.
+  factory VideoModel.fromBackendJson(Map<String, dynamic> json) {
+    return VideoModel(
+      id: (json['id'] ?? 0).toString(),
+      videoUrl: json['video_url'] ?? '',
+      description: json['description'] ?? 'Sin descripción',
+      // En un caso real, estos valores vendrían de nuestra API de Go.
+      // Por ahora, los simulamos si no vienen.
+      likes: json['likes'] ?? 0,
+      comments: json['comments'] ?? 0,
+      isLiked: json['is_liked'] ?? false,
+      isBookmarked: json['is_bookmarked'] ?? false,
+    );
+  }
+
   /// Constructor para crear un [VideoModel] desde el JSON específico de la API de Pexels.
   factory VideoModel.fromPexelsJson(Map<String, dynamic> json) {
     final List<dynamic> videoFiles = json['video_files'] ?? [];

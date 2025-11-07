@@ -19,7 +19,7 @@ publish_to: "none" # Remove this line if you wish to publish to pub.dev
 version: 1.0.0+1
 
 environment:
-  sdk: ^3.9.0
+  sdk: ">=3.3.0 <4.0.0"
 
 # Dependencies specify other packages that your package needs in order to work.
 # To automatically upgrade your package dependencies to the latest versions
@@ -30,8 +30,12 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  video_player: ^2.9.2
-  http: ^1.2.1
+  video_player: ^2.10.0
+  http: 1.2.1 # Anclamos la versión para evitar conflictos con el SDK.
+  image_picker: ^1.1.2
+  url_launcher: ^6.3.2
+  google_sign_in: ^6.2.1 # Paquete para el flujo de login nativo de Android
+  flutter_secure_storage: ^9.2.2 # Para guardar el token JWT de forma segura
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
@@ -48,6 +52,9 @@ dev_dependencies:
   # rules and activating additional ones.
   flutter_lints: ^5.0.0
 
+# Esta sección fuerza a usar una versión específica de un paquete.
+# La usamos para resolver el conflicto entre la versión que necesita Android (nueva)
+# y la que el gestor de paquetes puede resolver (antigua).
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
 

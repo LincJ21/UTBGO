@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'profile_screen.dart';
+import 'login_screen.dart';
 import 'videos_screen.dart';
 
 /// [MainNavigationPage] es el widget principal de la aplicación.
@@ -15,6 +17,12 @@ class MainNavigationPage extends StatefulWidget {
 }
 
 class _MainNavigationPageState extends State<MainNavigationPage> {
+  /// [_isAuthenticated] controla si el usuario ha iniciado sesión.
+  /// Por defecto es `false` para mostrar primero la pantalla de login.
+  // bool? _isAuthenticated; // Nulable para representar el estado de carga
+  // --- CAMBIO: Forzamos la autenticación para saltar el login ---
+  bool? _isAuthenticated = true;
+
   /// [_selectedIndex] controla qué pestaña está activa.
   /// Inicia en 1 para que la aplicación abra directamente en la vista de videos.
   int _selectedIndex = 1;
@@ -48,7 +56,43 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    // --- CAMBIO: Comentamos la verificación de autenticación ---
+    // _checkAuthStatus();
+  }
+
+  /// Comprueba si hay un token JWT guardado para autenticar al usuario automáticamente.
+  // Future<void> _checkAuthStatus() async {
+  //   const storage = FlutterSecureStorage();
+  //   final token = await storage.read(key: 'jwt_token');
+  //   setState(() {
+  //     _isAuthenticated = token != null && token.isNotEmpty;
+  //   });
+  // }
+
+  /// Esta función se pasa a la pantalla de login para que pueda notificar
+  /// cuando el login ha sido (simuladamente) exitoso.
+  void _onLoginSuccess() {
+    setState(() {
+      _isAuthenticated = true;
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
+    // Muestra un loader mientras se verifica el estado de autenticación
+    if (_isAuthenticated == null) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
+    // --- Lógica de Autenticación ---
+    // Si el usuario no está autenticado, muestra la pantalla de login.
+    // Si no, muestra la navegación principal.
+    if (!_isAuthenticated!) {
+      return LoginScreen(onLoginSuccess: _onLoginSuccess);
+    }
+
     return Scaffold(
       // El cuerpo del Scaffold muestra la página correspondiente al índice seleccionado.
       body: _pages[_selectedIndex],

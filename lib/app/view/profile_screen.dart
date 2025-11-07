@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'profile_model.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:image_picker/image_picker.dart';
 
 /// [ProfileScreen] muestra la información del perfil del usuario.
 ///
@@ -17,6 +19,7 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   /// [_profileFuture] almacena el resultado de la llamada a la API del perfil.
   late Future<ProfileModel> _profileFuture;
+  final _storage = const FlutterSecureStorage();
 
   @override
   void initState() {
@@ -26,13 +29,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<ProfileModel> _fetchProfile() async {
     // URL para conectar al backend local desde el emulador de Android.
-    const String baseUrl = 'http://10.0.2.2:8080';
+    const String baseUrl = 'http://10.0.2.2:8080/api';
+    final token = await _storage.read(key: 'jwt_token');
+    if (token == null) {
+      throw Exception('Token no encontrado. El usuario no está autenticado.');
+    }
+
     try {
-      final response = await http.get(Uri.parse('$baseUrl/profile/1'));
+      final response = await http.get(
+        Uri.parse('$baseUrl/profile/me'),
+        headers: {'Authorization': 'Bearer $token'},
+      );
       if (response.statusCode == 200) {
         return ProfileModel.fromJson(json.decode(response.body));
       } else {
-        throw Exception('Fallo al cargar el perfil');
+        throw Exception('Fallo al cargar el perfil: ${response.statusCode}');
       }
     } catch (e) {
       debugPrint('Error fetching profile: $e. Loading local fallback.');
@@ -42,6 +53,46 @@ class _ProfileScreenState extends State<ProfileScreen> {
         username: 'Nombre Estudiante (Local)',
         avatarUrl: '', // URL vacía para mostrar el ícono
       );
+    }
+  }
+
+  Future<void> _uploadAvatar() async {
+    final picker = ImagePicker();
+    // 1. Permitir al usuario seleccionar una imagen
+    final XFile? image = await picker.pickImage(source: ImageSource.gallery);
+
+    if (image == null) return; // El usuario canceló la selección
+
+    // 2. Preparar la petición multipart
+    const String uploadUrl = 'http://10.0.2.2:8080/api/profile/avatar';
+    final token = await _storage.read(key: 'jwt_token');
+    if (token == null) {
+      debugPrint('Error: No se encontró token para la subida.');
+      return;
+    }
+
+    var request = http.MultipartRequest('POST', Uri.parse(uploadUrl));
+    request.headers['Authorization'] = 'Bearer $token';
+    request.files.add(await http.MultipartFile.fromPath('avatar', image.path));
+
+    // 3. Enviar la petición
+    try {
+      final response = await request.send();
+      if (response.statusCode == 200) {
+        debugPrint('Avatar subido con éxito!');
+        // 4. Refrescar el perfil para mostrar la nueva imagen
+        setState(() {
+          _profileFuture = _fetchProfile();
+        });
+      } else {
+        debugPrint('Error al subir el avatar: ${response.statusCode}');
+        // Mostrar un SnackBar o diálogo de error al usuario
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Error al subir la imagen.')));
+      }
+    } catch (e) {
+      debugPrint('Excepción al subir el avatar: $e');
     }
   }
 
@@ -96,22 +147,35 @@ class _ProfileScreenState extends State<ProfileScreen> {
             const SizedBox(height: 20),
 
             // Avatar de Perfil Circular
-            // Mostramos la imagen de red si la URL no está vacía
-            profile.avatarUrl.isNotEmpty
-                ? CircleAvatar(
-                    radius: 70,
-                    backgroundImage: NetworkImage(profile.avatarUrl),
-                    backgroundColor: colorIconoPerfil,
-                  )
-                : CircleAvatar(
-                    radius: 70, // Tamaño del círculo exterior
-                    backgroundColor: colorIconoPerfil, // Círculo azul
-                    child: const Icon(
-                      Icons.person,
-                      size: 100, // Tamaño del ícono de persona
-                      color: Colors.white, // Persona blanca
+            Stack(
+              alignment: Alignment.bottomRight,
+              children: [
+                // El avatar
+                profile.avatarUrl.isNotEmpty
+                    ? CircleAvatar(
+                        radius: 70,
+                        backgroundImage: NetworkImage(profile.avatarUrl),
+                        backgroundColor: colorIconoPerfil,
+                      )
+                    : CircleAvatar(
+                        radius: 70,
+                        backgroundColor: colorIconoPerfil,
+                        child: const Icon(Icons.person, size: 100, color: Colors.white),
+                      ),
+                // El botón para subir archivo
+                GestureDetector(
+                  onTap: _uploadAvatar,
+                  child: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF003399),
+                      shape: BoxShape.circle,
                     ),
+                    child: const Icon(Icons.edit, color: Colors.white, size: 24),
                   ),
+                ),
+              ],
+            ),
 
             const SizedBox(height: 30),
 
@@ -127,12 +191,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
                 child: Padding(
                   padding: const EdgeInsets.all(25.0),
-                  child: Text(
-                    profile.username,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
+                  child: Center(
+                    child: Text(
+                      profile.username,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
                 ),
