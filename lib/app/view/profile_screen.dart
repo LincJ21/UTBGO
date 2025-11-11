@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'profile_model.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'upload_video_screen.dart';
 import 'package:image_picker/image_picker.dart';
 
 /// [ProfileScreen] muestra la información del perfil del usuario.
@@ -30,15 +31,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<ProfileModel> _fetchProfile() async {
     // URL para conectar al backend local desde el emulador de Android.
     const String baseUrl = 'http://10.0.2.2:8080/api';
+    // --- CAMBIO PARA PRUEBAS ---
+    // Leemos el token, pero no lanzamos un error si no existe, ya que el backend
+    // está configurado para devolver el usuario con ID 1 de todas formas.
     final token = await _storage.read(key: 'jwt_token');
-    if (token == null) {
-      throw Exception('Token no encontrado. El usuario no está autenticado.');
-    }
 
     try {
       final response = await http.get(
         Uri.parse('$baseUrl/profile/me'),
-        headers: {'Authorization': 'Bearer $token'},
+        headers: {
+          'Authorization': 'Bearer ${token ?? 'test-token'}'
+        }, // Enviamos un token de relleno si no hay uno real.
       );
       if (response.statusCode == 200) {
         return ProfileModel.fromJson(json.decode(response.body));
@@ -65,14 +68,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     // 2. Preparar la petición multipart
     const String uploadUrl = 'http://10.0.2.2:8080/api/profile/avatar';
+    // --- CAMBIO PARA PRUEBAS ---
+    // Leemos el token, pero no fallamos si es nulo. Usaremos un valor de relleno.
     final token = await _storage.read(key: 'jwt_token');
-    if (token == null) {
-      debugPrint('Error: No se encontró token para la subida.');
-      return;
-    }
 
     var request = http.MultipartRequest('POST', Uri.parse(uploadUrl));
-    request.headers['Authorization'] = 'Bearer $token';
+    // Enviamos un token de relleno si no hay uno real. El backend lo ignorará.
+    request.headers['Authorization'] = 'Bearer ${token ?? 'test-token'}';
     request.files.add(await http.MultipartFile.fromPath('avatar', image.path));
 
     // 3. Enviar la petición
@@ -122,6 +124,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final Color colorFondoPerfil = Colors.blue[100]!.withOpacity(0.7);
     // El color del ícono de perfil circular
     final Color colorIconoPerfil = Colors.blue[300]!;
+
+    void _navigateToUploadVideo() {
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (context) => const UploadVideoScreen(),
+        ),
+      );
+    }
 
     return Scaffold(
       backgroundColor: Colors.white, // Fondo blanco como en la imagen
@@ -191,15 +201,28 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
                 child: Padding(
                   padding: const EdgeInsets.all(25.0),
-                  child: Center(
-                    child: Text(
-                      profile.username,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        profile.username,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
-                    ),
+                      const SizedBox(height: 20),
+                      ElevatedButton.icon(
+                        onPressed: _navigateToUploadVideo,
+                        icon: const Icon(Icons.video_call),
+                        label: const Text('Subir Video'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF003399),
+                          foregroundColor: Colors.white,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),

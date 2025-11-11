@@ -12,6 +12,7 @@ import (
 	"github.com/cloudinary/cloudinary-go/v2/api/uploader"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v4"
+	"golang.org/x/crypto/bcrypt"
 	"google.golang.org/api/idtoken"
 )
 
@@ -113,21 +114,77 @@ func handleVerifyToken(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"token": tokenString})
 }
 
-func handleGetProfile(c *gin.Context) {
-	// El userID del middleware ahora viene como float64.
-	userIDVal, exists := c.Get("userID")
-	if !exists {
-		// Esto no debería ocurrir si el middleware funciona, pero es una buena práctica verificar.
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "UserID no encontrado en el token"})
+// handleLogin maneja el inicio de sesión con email y contraseña.
+func handleLogin(c *gin.Context) {
+	var requestBody struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+
+	if err := c.ShouldBindJSON(&requestBody); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Formato de petición inválido"})
 		return
 	}
-	// Convertimos el float64 a int para usarlo en la consulta.
-	userID := int(userIDVal.(float64))
+
+	var userID int
+	var hashedPassword string
+
+	// 1. Buscar al usuario por email y obtener su ID y hash de contraseña.
+	err := DB.QueryRowContext(c, "SELECT id_usuario, password_hash FROM usuarios WHERE email = $1", requestBody.Email).Scan(&userID, &hashedPassword)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			// Email no encontrado. Devolvemos 401 para no dar pistas a atacantes.
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Credenciales inválidas"})
+			return
+		}
+		// Otro error de base de datos.
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error en la base de datos"})
+		return
+	}
+
+	// 2. Comparar la contraseña proporcionada con el hash almacenado.
+	err = bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(requestBody.Password))
+	if err != nil {
+		// La contraseña no coincide.
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Credenciales inválidas"})
+		return
+	}
+
+	// 3. Si la contraseña es correcta, generar un token JWT (lógica idéntica a la de Google).
+	log.Printf("Usuario %d autenticado correctamente con email/password.", userID)
+
+	jwtToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"user_id": float64(userID),
+		"exp":     time.Now().Add(time.Hour * 72).Unix(),
+	})
+
+	tokenString, err := jwtToken.SignedString([]byte(os.Getenv("JWT_SECRET_KEY")))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Fallo al crear el token"})
+		return
+	}
+
+	// Actualizar la fecha de último login (opcional pero buena práctica).
+	_, err = DB.ExecContext(c, "UPDATE usuarios SET ultimo_login = NOW() WHERE id_usuario = $1", userID)
+	if err != nil {
+		log.Printf("Advertencia: no se pudo actualizar ultimo_login para usuario %d: %v", userID, err)
+	}
+
+	// 4. Devolver el token.
+	c.JSON(http.StatusOK, gin.H{"token": tokenString})
+}
+
+func handleGetProfile(c *gin.Context) {
+	// --- CAMBIO PARA PRUEBAS ---
+	// Forzamos el uso del userID = 1 para que la pantalla de perfil siempre
+	// muestre el mismo usuario durante el desarrollo, ignorando el token.
+	const userID = 1
+	log.Printf("ADVERTENCIA: Se está forzando el uso del userID %d para pruebas en handleGetProfile.", userID)
 
 	var user User
 
-	// Buscamos el perfil del usuario usando el ID del token JWT
-	// La columna id_usuario es numérica, por lo que pasamos el userID como int.
+	// Buscamos el perfil del usuario usando el ID de prueba (1).
+	// La columna id_usuario es numérica.
 	err := DB.QueryRowContext(c, "SELECT u.id_usuario, p.nombre, u.email, p.avatar_url FROM usuarios u JOIN perfiles p ON u.id_usuario = p.id_usuario WHERE u.id_usuario = $1", userID).Scan(&user.ID, &user.Username, &user.Email, &user.AvatarURL)
 
 	user.ID = userID // Aseguramos que el ID del usuario se incluya en la respuesta.
@@ -143,15 +200,15 @@ func handleGetProfile(c *gin.Context) {
 }
 
 func handleUploadAvatar(c *gin.Context) {
-	// El userID del middleware ahora viene como float64.
-	userIDVal, exists := c.Get("userID")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "UserID no encontrado en el token"})
-		return
-	}
-	// Convertimos el float64 a int.
-	userID := int(userIDVal.(float64))
+	// --- CAMBIO PARA PRUEBAS ---
+	// Forzamos el uso del userID = 1 para que la subida de avatar siempre
+	// se asocie al mismo usuario durante el desarrollo, ignorando el token.
+	const userID = 1
+	log.Printf("ADVERTENCIA: Se está forzando el uso del userID %d para pruebas en handleUploadAvatar.", userID)
 
+	/* CÓDIGO DE AUTENTICACIÓN ORIGINAL (DESACTIVADO)
+	userIDVal, exists := c.Get("userID") ...
+	*/
 	// 1. Obtener el archivo del formulario multipart
 	file, err := c.FormFile("avatar")
 	if err != nil {
@@ -172,11 +229,13 @@ func handleUploadAvatar(c *gin.Context) {
 	overwrite := true
 	// 3. Subir el archivo a Cloudinary
 	// Usamos el ID de usuario como PublicID para evitar duplicados y facilitar la gestión.
-	uploadResult, err := cld.Upload.Upload(c.Request.Context(), src, uploader.UploadParams{
+	uploadResult, err := cld.Upload.Upload(context.Background(), src, uploader.UploadParams{
 		PublicID:  fmt.Sprintf("avatars/%d", userID),
 		Overwrite: &overwrite, // Pasamos el puntero a la variable 'overwrite'
 	})
 	if err != nil {
+		// ¡AÑADIDO! Logueamos el error detallado de Cloudinary.
+		log.Printf("ERROR: Fallo al subir el avatar a Cloudinary: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Fallo al subir a Cloudinary: " + err.Error()})
 		return
 	}
@@ -189,6 +248,79 @@ func handleUploadAvatar(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Avatar actualizado correctamente", "avatarUrl": uploadResult.SecureURL})
+}
+
+// handleUploadVideo maneja la subida de un nuevo video.
+func handleUploadVideo(c *gin.Context) {
+	// --- CAMBIO PARA PRUEBAS ---
+	// Forzamos el uso del userID = 1 para asociar el video al usuario de prueba.
+	const userID = 1
+	log.Printf("ADVERTENCIA: Se está forzando el uso del userID %d para pruebas en handleUploadVideo.", userID)
+
+	log.Printf("Iniciando subida de video para el usuario ID: %d", userID)
+	// 1. Obtener los campos de texto del formulario.
+	title := c.PostForm("title")
+	description := c.PostForm("description")
+	if title == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "El título es requerido"})
+		return
+	}
+
+	// 2. Obtener el archivo de video.
+	file, err := c.FormFile("video")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No se ha subido ningún archivo de video: " + err.Error()})
+		return
+	}
+
+	src, err := file.Open()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "No se pudo abrir el archivo de video: " + err.Error()})
+		return
+	}
+	defer src.Close()
+
+	// 3. Subir el video a Cloudinary, especificando que es un video.
+	uploadResult, err := cld.Upload.Upload(context.Background(), src, uploader.UploadParams{
+		Folder:       "videos", // Guardar en una carpeta específica.
+		ResourceType: "video",  // ¡Importante! Indicar que es un video.
+	})
+	if err != nil {
+		// ¡AÑADIDO! Logueamos el error detallado de Cloudinary.
+		log.Printf("ERROR: Fallo al subir el video a Cloudinary: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Fallo al subir el video a Cloudinary: " + err.Error()})
+		return
+	}
+
+	// 4. Insertar la información del video en la tabla 'contenidos'.
+	insertQuery := `
+		INSERT INTO contenidos (id_autor, id_tipo_contenido, id_estado_contenido, titulo, descripcion, url_contenido, url_thumbnail, duracion_segundos, tamanio_bytes, fecha_publicacion)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+	`
+	// Por ahora, usamos una URL de miniatura estática.
+	thumbnailURL := "https://res.cloudinary.com/dlnm7yxt3/image/upload/v1762540397/placeholder_thumbnail.jpg"
+
+	// --- CORRECCIÓN ---
+	// La duración no es un campo directo. Se extrae del mapa de respuesta genérico.
+	var duration float64
+	if respMap, ok := uploadResult.Response.(map[string]interface{}); ok {
+		if d, ok := respMap["duration"].(float64); ok {
+			duration = d
+		}
+	}
+	// El tamaño sí es un campo directo: uploadResult.Bytes
+
+	// Usamos los IDs globales cargados al inicio de la aplicación.
+	_, err = DB.ExecContext(c, insertQuery, userID, videoContentTypeID, publishedContentStateID, title, description, uploadResult.SecureURL, thumbnailURL, int(duration), uploadResult.Bytes)
+	if err != nil {
+
+		log.Printf("ERROR: Fallo al insertar el video en la base de datos: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Fallo al guardar la información del video en la base de datos: " + err.Error()})
+		return
+	}
+
+	log.Printf("Video subido por usuario %d y guardado en la base de datos.", userID)
+	c.JSON(http.StatusOK, gin.H{"message": "Video subido correctamente", "videoUrl": uploadResult.SecureURL})
 }
 
 func ensureVideoExists(videoID string) *Video {
@@ -261,15 +393,53 @@ func handleSearchVideos(c *gin.Context) {
 		return
 	}
 
-	// En una app real, aquí buscarías en tu base de datos de videos.
-	// Por ahora, devolvemos un resultado simulado.
-	log.Printf("Buscando videos para: '%s'", query)
-	c.JSON(http.StatusOK, gin.H{
-		"message": "Search results for " + query,
-		"results": []gin.H{
-			{"id": "search1", "description": "Video encontrado sobre " + query},
-		},
-	})
+	// Preparamos el término de búsqueda para usar con LIKE en SQL.
+	searchQuery := "%" + query + "%"
+
+	// Buscamos en la base de datos videos cuyo título o descripción coincidan con la búsqueda.
+	rows, err := DB.QueryContext(c, `
+		SELECT
+			c.id_contenido, c.titulo, c.descripcion, c.url_contenido, c.url_thumbnail,
+			COALESCE(c.duracion_segundos, 0),
+			(SELECT COUNT(*) FROM interacciones WHERE id_contenido = c.id_contenido AND id_tipo_interaccion = $1) AS likes_count,
+			(SELECT COUNT(*) FROM comentarios WHERE id_contenido = c.id_contenido) AS comments_count
+		FROM contenidos c
+		WHERE
+			c.id_tipo_contenido = $2 AND c.id_estado_contenido = $3
+			AND (c.titulo ILIKE $4 OR c.descripcion ILIKE $4)
+		ORDER BY c.fecha_publicacion DESC
+	`, likeInteractionTypeID, videoContentTypeID, publishedContentStateID, searchQuery)
+
+	if err != nil {
+		log.Printf("Error al buscar videos en la base de datos: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al buscar videos"})
+		return
+	}
+	defer rows.Close()
+
+	var searchResults []gin.H
+	for rows.Next() {
+		var id, duration, likes, comments int
+		var title, description, videoURL, thumbnailURL string
+		if err := rows.Scan(&id, &title, &description, &videoURL, &thumbnailURL, &duration, &likes, &comments); err != nil {
+			log.Printf("Error al escanear la fila del video de búsqueda: %v", err)
+			continue
+		}
+		searchResults = append(searchResults, gin.H{
+			"id":            fmt.Sprintf("%d", id),
+			"title":         title,
+			"description":   description,
+			"video_url":     videoURL,
+			"thumbnail_url": thumbnailURL,
+			"likes":         likes,
+			"comments":      comments,
+			"is_liked":      false, // Estos valores podrían calcularse si el usuario está autenticado
+			"is_bookmarked": false,
+		})
+	}
+
+	log.Printf("Búsqueda para '%s' devolvió %d resultados.", query, len(searchResults))
+	c.JSON(http.StatusOK, gin.H{"videos": searchResults})
 }
 
 // handleGetVideosFeed devuelve una lista de videos para el feed principal.

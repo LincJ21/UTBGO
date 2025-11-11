@@ -3,7 +3,9 @@ import 'dart:convert';
 /// [VideoModel] representa la estructura de un video dentro de la app Flutter.
 class VideoModel {
   final String id;
+  final String title;
   final String videoUrl;
+  final String thumbnailUrl;
   final String description;
   // Convertimos a 'var' para poder modificarlos
   var likes;
@@ -13,7 +15,9 @@ class VideoModel {
 
   VideoModel({
     required this.id,
+    required this.title,
     required this.videoUrl,
+    required this.thumbnailUrl,
     required this.description,
     // Valores iniciales
     required this.likes,
@@ -26,7 +30,9 @@ class VideoModel {
   factory VideoModel.fromJson(Map<String, dynamic> json) {
     return VideoModel(
       id: json['id'] ?? '',
+      title: json['title'] ?? 'Sin Título',
       videoUrl: json['videoUrl'] ?? '',
+      thumbnailUrl: json['thumbnail_url'] ?? '',
       description: json['description'] ?? '',
       likes: json['likes'] ?? 0,
       comments: json['comments'] ?? 0,
@@ -39,7 +45,9 @@ class VideoModel {
   factory VideoModel.fromBackendJson(Map<String, dynamic> json) {
     return VideoModel(
       id: (json['id'] ?? 0).toString(),
+      title: json['title'] ?? 'Sin Título',
       videoUrl: json['video_url'] ?? '',
+      thumbnailUrl: json['thumbnail_url'] ?? '',
       description: json['description'] ?? 'Sin descripción',
       // En un caso real, estos valores vendrían de nuestra API de Go.
       // Por ahora, los simulamos si no vienen.
@@ -64,7 +72,9 @@ class VideoModel {
 
     return VideoModel(
       id: (json['id'] ?? 0).toString(),
+      title: 'Video por ${json['user']?['name'] ?? 'Desconocido'}',
       videoUrl: url,
+      thumbnailUrl: json['image'] ?? '', // Pexels usa 'image' para la miniatura
       description: 'Video por ${json['user']?['name'] ?? 'Desconocido'}',
       // En un caso real, estos valores vendrían de nuestra API de Go.
       likes: (json['id'] % 5000) + 100,

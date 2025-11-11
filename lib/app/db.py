@@ -1231,7 +1231,7 @@ def get_connection():
         )
         return connection
     except (Exception, Error) as error:
-        print("❌ Error al conectar a PostgreSQL", error)
+        print(" Error al conectar a PostgreSQL", error)
         return None
 
 

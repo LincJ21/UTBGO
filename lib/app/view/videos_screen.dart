@@ -11,7 +11,10 @@ import 'video_player_widget.dart';
 /// - Cargar la lista inicial de videos desde la API de Pexels.
 /// - Implementar el "scroll infinito" para cargar más videos cuando el usuario llega al final.
 class VideosScreen extends StatefulWidget {
-  const VideosScreen({super.key});
+  /// --- NUEVO --- Callback para notificar al padre sobre cambios de visibilidad.
+  final Function(bool isVisible) onVisibilityChanged;
+
+  const VideosScreen({super.key, required this.onVisibilityChanged});
 
   @override
   State<VideosScreen> createState() => _VideosScreenState();
@@ -155,6 +158,7 @@ class _VideosScreenState extends State<VideosScreen> {
         return VideoPlayerWidget(
           key: Key(video.id), // La key ayuda a Flutter a identificar cada video de forma única.
           video: video,
+          onVisibilityChanged: widget.onVisibilityChanged, // Pasamos el callback
         );
       },
     );
