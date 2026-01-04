@@ -1,0 +1,293 @@
+package main
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"log"
+	"net/http"
+	"os"
+	"time"
+
+	"github.com/cloudinary/cloudinary-go/v2/api/uploader"
+	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v4"
+	"google.golang.org/api/idtoken"
+)
+
+// --- Handlers ---
+
+// handleVerifyToken es el nuevo handler para el flujo de la app nativa.
+func handleVerifyToken(c *gin.Context) {
+	var requestBody struct {
+		Token string `json:"token"`
+	}
+
+	if err := c.ShouldBindJSON(&requestBody); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Formato de petición inválido"})
+		return
+	}
+
+	idToken := requestBody.Token
+	if idToken == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "El token es requerido"})
+		return
+	}
+
+	// 1. Verificar el idToken usando la librería de Google.
+	// El clientID aquí debe ser el de tu aplicación de Android.
+	payload, err := idtoken.Validate(context.Background(), idToken, os.Getenv("GOOGLE_CLIENT_ID_ANDROID"))
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Token de Google inválido: " + err.Error()})
+		return
+	}
+
+	// 2. Extraer la información del usuario del payload del token.
+	claims := payload.Claims
+	googleEmail := claims["email"].(string)
+	googleName := claims["name"].(string)
+	googlePicture := claims["picture"].(string)
+
+	// --- Lógica de Base de Datos (idéntica a la de handleGoogleCallback) ---
+	var userID int
+	var user User
+
+	err = DB.QueryRowContext(c, "SELECT u.id_usuario, p.nombre, u.email, p.avatar_url FROM usuarios u JOIN perfiles p ON u.id_usuario = p.id_usuario WHERE u.email = $1", googleEmail).Scan(&userID, &user.Username, &user.Email, &user.AvatarURL)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			log.Printf("Usuario nuevo con email %s. Creando entrada en la BD.", googleEmail)
+			tx, err := DB.BeginTx(c, nil)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al iniciar la transacción: " + err.Error()})
+				return
+			}
+			defer tx.Rollback()
+
+			err = tx.QueryRowContext(c, "INSERT INTO usuarios (id_tipo_usuario, id_estado_usuario, email, password_hash, fecha_registro) VALUES (3, 1, $1, 'google-login', NOW()) RETURNING id_usuario", googleEmail).Scan(&userID)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al crear usuario: " + err.Error()})
+				return
+			}
+
+			_, err = tx.ExecContext(c, "INSERT INTO perfiles (id_usuario, nombre, apellido, avatar_url) VALUES ($1, $2, '', $3)", userID, googleName, googlePicture)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al crear perfil: " + err.Error()})
+				return
+			}
+
+			if err = tx.Commit(); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al confirmar la transacción: " + err.Error()})
+				return
+			}
+			// No es necesario asignar user.ID aquí, ya que el token usará el userID numérico.
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al consultar la base de datos: " + err.Error()})
+			return
+		}
+	} else {
+		log.Printf("Usuario existente con email %s. Actualizando datos.", googleEmail)
+		_, err = DB.ExecContext(c, "UPDATE usuarios SET ultimo_login = NOW() WHERE id_usuario = $1", userID)
+		if err != nil {
+			log.Printf("Advertencia: no se pudo actualizar ultimo_login para usuario %d: %v", userID, err)
+		}
+	}
+
+	// 3. Crear nuestro propio token JWT.
+	// Guardamos el userID como un número, no como un string.
+	jwtToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"user_id": float64(userID), // El tipo por defecto para números en claims de JWT es float64
+		"exp":     time.Now().Add(time.Hour * 72).Unix(),
+	})
+
+	tokenString, err := jwtToken.SignedString([]byte(os.Getenv("JWT_SECRET_KEY")))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create token"})
+		return
+	}
+
+	// 4. Devolver nuestro token JWT en una respuesta JSON.
+	c.JSON(http.StatusOK, gin.H{"token": tokenString})
+}
+
+func handleGetProfile(c *gin.Context) {
+	// El userID del middleware ahora viene como float64.
+	userIDVal, exists := c.Get("userID")
+	if !exists {
+		// Esto no debería ocurrir si el middleware funciona, pero es una buena práctica verificar.
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "UserID no encontrado en el token"})
+		return
+	}
+	// Convertimos el float64 a int para usarlo en la consulta.
+	userID := int(userIDVal.(float64))
+
+	var user User
+
+	// Buscamos el perfil del usuario usando el ID del token JWT
+	// La columna id_usuario es numérica, por lo que pasamos el userID como int.
+	err := DB.QueryRowContext(c, "SELECT u.id_usuario, p.nombre, u.email, p.avatar_url FROM usuarios u JOIN perfiles p ON u.id_usuario = p.id_usuario WHERE u.id_usuario = $1", userID).Scan(&user.ID, &user.Username, &user.Email, &user.AvatarURL)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Database query error: " + err.Error()})
+		}
+		return
+	}
+	c.JSON(http.StatusOK, user)
+}
+
+func handleUploadAvatar(c *gin.Context) {
+	// El userID del middleware ahora viene como float64.
+	userIDVal, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "UserID no encontrado en el token"})
+		return
+	}
+	// Convertimos el float64 a int.
+	userID := int(userIDVal.(float64))
+
+	// 1. Obtener el archivo del formulario multipart
+	file, err := c.FormFile("avatar")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No se ha subido ningún archivo: " + err.Error()})
+		return
+	}
+
+	// 2. Abrir el archivo para leerlo
+	src, err := file.Open()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "No se pudo abrir el archivo: " + err.Error()})
+		return
+	}
+	defer src.Close()
+
+	// CORRECCIÓN: El SDK de Cloudinary espera un puntero a bool (*bool) para parámetros opcionales.
+	// No podemos usar 'true' directamente. Creamos una variable y pasamos su puntero.
+	overwrite := true
+	// 3. Subir el archivo a Cloudinary
+	// Usamos el ID de usuario como PublicID para evitar duplicados y facilitar la gestión.
+	uploadResult, err := cld.Upload.Upload(c.Request.Context(), src, uploader.UploadParams{
+		PublicID:  fmt.Sprintf("avatars/%d", userID),
+		Overwrite: &overwrite, // Pasamos el puntero a la variable 'overwrite'
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Fallo al subir a Cloudinary: " + err.Error()})
+		return
+	}
+
+	// 4. Actualizar la URL del avatar en la base de datos
+	_, err = DB.ExecContext(c, "UPDATE perfiles SET avatar_url = $1 WHERE id_usuario = $2", uploadResult.SecureURL, userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Fallo al actualizar la base de datos: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Avatar actualizado correctamente", "avatarUrl": uploadResult.SecureURL})
+}
+
+func ensureVideoExists(videoID string) *Video {
+	Mu.Lock()
+	defer Mu.Unlock()
+	if _, ok := Videos[videoID]; !ok {
+		Videos[videoID] = &Video{ID: videoID, Likes: 0, IsLiked: false, IsBookmarked: false}
+	}
+	return Videos[videoID]
+}
+
+func handleToggleLike(c *gin.Context) {
+	videoID := c.Param("id")
+	video := ensureVideoExists(videoID)
+
+	Mu.Lock()
+	defer Mu.Unlock()
+
+	video.IsLiked = !video.IsLiked
+	if video.IsLiked {
+		video.Likes++
+	} else {
+		video.Likes--
+	}
+
+	log.Printf("Video %s toggled like. New state: Liked=%v, Likes=%d", videoID, video.IsLiked, video.Likes)
+	c.JSON(http.StatusOK, video)
+}
+
+func handleToggleBookmark(c *gin.Context) {
+	videoID := c.Param("id")
+	video := ensureVideoExists(videoID)
+
+	Mu.Lock()
+	defer Mu.Unlock()
+
+	video.IsBookmarked = !video.IsBookmarked
+
+	log.Printf("Video %s toggled bookmark. New state: Bookmarked=%v", videoID, video.IsBookmarked)
+	c.JSON(http.StatusOK, video)
+}
+
+func handleGetComments(c *gin.Context) {
+	videoID := c.Param("id")
+
+	Mu.Lock()
+	defer Mu.Unlock()
+
+	// Simular algunos comentarios si no existen
+	if _, ok := Comments[videoID]; !ok {
+		Comments[videoID] = []Comment{
+			{ID: "c1", UserID: "user1", Username: "Usuario Uno", Text: "¡Qué buen video!"},
+			{ID: "c2", UserID: "user2", Username: "Usuario Dos", Text: "Interesante perspectiva."},
+		}
+	}
+
+	c.JSON(http.StatusOK, Comments[videoID])
+}
+
+func handleSearchVideos(c *gin.Context) {
+	query := c.Query("q")
+	if query == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Query parameter 'q' is required"})
+		return
+	}
+
+	// En una app real, aquí buscarías en tu base de datos de videos.
+	// Por ahora, devolvemos un resultado simulado.
+	log.Printf("Buscando videos para: '%s'", query)
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Search results for " + query,
+		"results": []gin.H{
+			{"id": "search1", "description": "Video encontrado sobre " + query},
+		},
+	})
+}
+
+// handleGetVideosFeed devuelve una lista de videos para el feed principal.
+// TODO: Implementar la lógica para obtener videos desde la base de datos.
+func handleGetVideosFeed(c *gin.Context) {
+	// Por ahora, devolvemos una lista de videos de ejemplo (hardcodeados).
+	// Estos videos son de Pexels, pero servidos a través de nuestra API.
+	// Esto permite que la app de Flutter funcione mientras se desarrolla la lógica de la BD.
+	sampleVideos := []gin.H{
+		{
+			"id":            "1",
+			"description":   "Video de ejemplo 1: Olas del mar",
+			"video_url":     "https://videos.pexels.com/video-files/853881/853881-hd.mp4",
+			"likes":         123,
+			"comments":      45,
+			"is_liked":      false,
+			"is_bookmarked": false,
+		},
+		{
+			"id":            "2",
+			"description":   "Video de ejemplo 2: Nubes en el cielo",
+			"video_url":     "https://videos.pexels.com/video-files/855384/855384-hd.mp4",
+			"likes":         456,
+			"comments":      78,
+			"is_liked":      true,
+			"is_bookmarked": false,
+		},
+	}
+
+	c.JSON(http.StatusOK, gin.H{"videos": sampleVideos})
+}
