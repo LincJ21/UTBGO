@@ -1,0 +1,488 @@
+CREATE TABLE "tipos_usuario" (
+  "id_tipo_usuario" serial PRIMARY KEY,
+  "codigo" varchar(20) UNIQUE NOT NULL,
+  "nombre" varchar(50) NOT NULL,
+  "descripcion" text,
+  "nivel_acceso" integer DEFAULT 0
+);
+
+CREATE TABLE "estados_usuario" (
+  "id_estado_usuario" serial PRIMARY KEY,
+  "codigo" varchar(20) UNIQUE NOT NULL,
+  "nombre" varchar(50) NOT NULL,
+  "descripcion" text
+);
+
+CREATE TABLE "tipos_contenido" (
+  "id_tipo_contenido" serial PRIMARY KEY,
+  "codigo" varchar(20) UNIQUE NOT NULL,
+  "nombre" varchar(50) NOT NULL,
+  "descripcion" text,
+  "extensiones_permitidas" json
+);
+
+CREATE TABLE "estados_contenido" (
+  "id_estado_contenido" serial PRIMARY KEY,
+  "codigo" varchar(20) UNIQUE NOT NULL,
+  "nombre" varchar(50) NOT NULL,
+  "descripcion" text
+);
+
+CREATE TABLE "tipos_interaccion" (
+  "id_tipo_interaccion" serial PRIMARY KEY,
+  "codigo" varchar(20) UNIQUE NOT NULL,
+  "nombre" varchar(50) NOT NULL,
+  "descripcion" text,
+  "incrementa_contador" boolean DEFAULT true
+);
+
+CREATE TABLE "tipos_reporte" (
+  "id_tipo_reporte" serial PRIMARY KEY,
+  "codigo" varchar(20) UNIQUE NOT NULL,
+  "nombre" varchar(50) NOT NULL,
+  "descripcion" text,
+  "gravedad" integer DEFAULT 1
+);
+
+CREATE TABLE "estados_reporte" (
+  "id_estado_reporte" serial PRIMARY KEY,
+  "codigo" varchar(20) UNIQUE NOT NULL,
+  "nombre" varchar(50) NOT NULL,
+  "descripcion" text
+);
+
+CREATE TABLE "niveles_log" (
+  "id_nivel_log" serial PRIMARY KEY,
+  "codigo" varchar(20) UNIQUE NOT NULL,
+  "nombre" varchar(50) NOT NULL,
+  "descripcion" text
+);
+
+CREATE TABLE "tipos_notificacion" (
+  "id_tipo_notificacion" serial PRIMARY KEY,
+  "codigo" varchar(20) UNIQUE NOT NULL,
+  "nombre" varchar(50) NOT NULL,
+  "descripcion" text,
+  "plantilla_mensaje" text
+);
+
+CREATE TABLE "estados_general" (
+  "id_estado_general" serial PRIMARY KEY,
+  "codigo" varchar(20) UNIQUE NOT NULL,
+  "nombre" varchar(50) NOT NULL,
+  "descripcion" text,
+  "tipo_entidad" varchar(50) NOT NULL
+);
+
+CREATE TABLE "usuarios" (
+  "id_usuario" serial PRIMARY KEY,
+  "id_tipo_usuario" integer NOT NULL,
+  "id_estado_usuario" integer NOT NULL,
+  "email" varchar(255) UNIQUE NOT NULL,
+  "password_hash" varchar(255) NOT NULL,
+  "fecha_registro" timestamp DEFAULT (now()),
+  "ultimo_login" timestamp,
+  "token_verificacion" varchar(255),
+  "token_recuperacion" varchar(255),
+  "fecha_expiracion_token" timestamp
+);
+
+CREATE TABLE "perfiles" (
+  "id_perfil" serial PRIMARY KEY,
+  "id_usuario" integer UNIQUE NOT NULL,
+  "nombre" varchar(100) NOT NULL,
+  "apellido" varchar(100) NOT NULL,
+  "telefono" varchar(20),
+  "avatar_url" varchar(500),
+  "biografia" text,
+  "fecha_actualizacion" timestamp DEFAULT (now())
+);
+
+CREATE TABLE "estudiantes" (
+  "id_estudiante" serial PRIMARY KEY,
+  "id_usuario" integer UNIQUE NOT NULL,
+  "codigo_estudiante" varchar(50) UNIQUE NOT NULL,
+  "programa_academico" varchar(100),
+  "semestre" integer,
+  "fecha_ingreso" date
+);
+
+CREATE TABLE "docentes" (
+  "id_docente" serial PRIMARY KEY,
+  "id_usuario" integer UNIQUE NOT NULL,
+  "codigo_docente" varchar(50) UNIQUE NOT NULL,
+  "departamento" varchar(100),
+  "titulo_academico" varchar(100),
+  "especialidad" varchar(100),
+  "fecha_contratacion" date
+);
+
+CREATE TABLE "aspirantes" (
+  "id_aspirante" serial PRIMARY KEY,
+  "id_usuario" integer UNIQUE NOT NULL,
+  "documento_identidad" varchar(50) UNIQUE NOT NULL,
+  "fecha_nacimiento" date,
+  "ciudad" varchar(100),
+  "pais" varchar(100),
+  "programa_interes" varchar(100),
+  "fecha_solicitud" date DEFAULT (now()),
+  "acepto_terminos" boolean DEFAULT false,
+  "fecha_aceptacion_terminos" timestamp
+);
+
+CREATE TABLE "administradores" (
+  "id_administrador" serial PRIMARY KEY,
+  "id_usuario" integer UNIQUE NOT NULL,
+  "rol_administrativo" varchar(100) NOT NULL,
+  "nivel_acceso" integer DEFAULT 1,
+  "departamento" varchar(100),
+  "fecha_asignacion" date DEFAULT (now())
+);
+
+CREATE TABLE "preferencias_usuario" (
+  "id_preferencia" serial PRIMARY KEY,
+  "id_usuario" integer NOT NULL,
+  "tipo_configuracion" varchar(50) NOT NULL,
+  "clave_configuracion" varchar(100) NOT NULL,
+  "valor_configuracion" json,
+  "fecha_creacion" timestamp DEFAULT (now()),
+  "fecha_actualizacion" timestamp DEFAULT (now())
+);
+
+CREATE TABLE "intereses_usuario" (
+  "id_interes" serial PRIMARY KEY,
+  "id_usuario" integer NOT NULL,
+  "tag_interes" varchar(100) NOT NULL,
+  "peso_interes" integer DEFAULT 1,
+  "fecha_agregado" timestamp DEFAULT (now())
+);
+
+CREATE TABLE "categorias" (
+  "id_categoria" serial PRIMARY KEY,
+  "nombre" varchar(100) NOT NULL,
+  "descripcion" text,
+  "id_categoria_padre" integer,
+  "icono" varchar(100),
+  "color" varchar(20),
+  "id_estado_general" integer NOT NULL,
+  "fecha_creacion" timestamp DEFAULT (now())
+);
+
+CREATE TABLE "cursos" (
+  "id_curso" serial PRIMARY KEY,
+  "codigo_curso" varchar(50) UNIQUE NOT NULL,
+  "nombre" varchar(200) NOT NULL,
+  "descripcion" text,
+  "id_docente_responsable" integer,
+  "id_estado_general" integer NOT NULL,
+  "es_publico" boolean DEFAULT false,
+  "fecha_creacion" timestamp DEFAULT (now()),
+  "fecha_actualizacion" timestamp DEFAULT (now())
+);
+
+CREATE TABLE "contenidos" (
+  "id_contenido" serial PRIMARY KEY,
+  "titulo" varchar(255) NOT NULL,
+  "descripcion" text,
+  "id_autor" integer NOT NULL,
+  "id_tipo_contenido" integer NOT NULL,
+  "id_estado_contenido" integer NOT NULL,
+  "url_contenido" varchar(500) NOT NULL,
+  "url_thumbnail" varchar(500),
+  "duracion_segundos" integer,
+  "tamanio_bytes" bigint,
+  "tiene_subtitulos" boolean DEFAULT false,
+  "url_subtitulos" varchar(500),
+  "permite_comentarios" boolean DEFAULT true,
+  "permite_descargas" boolean DEFAULT false,
+  "visibilidad" varchar(20) DEFAULT 'publico',
+  "fecha_creacion" timestamp DEFAULT (now()),
+  "fecha_publicacion" timestamp,
+  "fecha_actualizacion" timestamp DEFAULT (now())
+);
+
+CREATE TABLE "contenido_categorias" (
+  "id_contenido_categoria" serial PRIMARY KEY,
+  "id_contenido" integer NOT NULL,
+  "id_categoria" integer NOT NULL,
+  "fecha_asignacion" timestamp DEFAULT (now())
+);
+
+CREATE TABLE "contenido_cursos" (
+  "id_contenido_curso" serial PRIMARY KEY,
+  "id_contenido" integer NOT NULL,
+  "id_curso" integer NOT NULL,
+  "orden_en_curso" integer DEFAULT 0,
+  "fecha_asignacion" timestamp DEFAULT (now())
+);
+
+CREATE TABLE "contenido_palabras_clave" (
+  "id_palabra_clave" serial PRIMARY KEY,
+  "id_contenido" integer NOT NULL,
+  "palabra_clave" varchar(100) NOT NULL,
+  "fecha_agregado" timestamp DEFAULT (now())
+);
+
+CREATE TABLE "interacciones" (
+  "id_interaccion" serial PRIMARY KEY,
+  "id_usuario" integer NOT NULL,
+  "id_contenido" integer NOT NULL,
+  "id_tipo_interaccion" integer NOT NULL,
+  "valor_interaccion" integer DEFAULT 1,
+  "metadata" json,
+  "fecha_interaccion" timestamp DEFAULT (now())
+);
+
+CREATE TABLE "comentarios" (
+  "id_comentario" serial PRIMARY KEY,
+  "id_usuario" integer NOT NULL,
+  "id_contenido" integer NOT NULL,
+  "id_comentario_padre" integer,
+  "texto" text NOT NULL,
+  "id_estado_general" integer NOT NULL,
+  "fecha_creacion" timestamp DEFAULT (now()),
+  "fecha_actualizacion" timestamp DEFAULT (now())
+);
+
+CREATE TABLE "reportes" (
+  "id_reporte" serial PRIMARY KEY,
+  "id_usuario_reportero" integer NOT NULL,
+  "id_contenido" integer,
+  "id_comentario" integer,
+  "id_tipo_reporte" integer NOT NULL,
+  "id_estado_reporte" integer NOT NULL,
+  "descripcion" text NOT NULL,
+  "fecha_reporte" timestamp DEFAULT (now()),
+  "fecha_resolucion" timestamp,
+  "id_administrador_resuelve" integer,
+  "accion_tomada" text
+);
+
+CREATE TABLE "seguimientos" (
+  "id_seguimiento" serial PRIMARY KEY,
+  "id_usuario_seguidor" integer NOT NULL,
+  "id_usuario_seguido" integer NOT NULL,
+  "notificaciones_activas" boolean DEFAULT true,
+  "fecha_seguimiento" timestamp DEFAULT (now())
+);
+
+CREATE TABLE "favoritos" (
+  "id_favorito" serial PRIMARY KEY,
+  "id_usuario" integer NOT NULL,
+  "id_contenido" integer NOT NULL,
+  "fecha_agregado" timestamp DEFAULT (now()),
+  "carpeta" varchar(100) DEFAULT 'general'
+);
+
+CREATE TABLE "historial_busquedas" (
+  "id_busqueda" serial PRIMARY KEY,
+  "id_usuario" integer,
+  "termino_busqueda" varchar(255) NOT NULL,
+  "resultados_encontrados" integer DEFAULT 0,
+  "filtros_aplicados" json,
+  "fecha_busqueda" timestamp DEFAULT (now())
+);
+
+CREATE TABLE "historial_vistas" (
+  "id_vista" serial PRIMARY KEY,
+  "id_usuario" integer NOT NULL,
+  "id_contenido" integer NOT NULL,
+  "tiempo_reproduccion_segundos" integer DEFAULT 0,
+  "porcentaje_visto" integer DEFAULT 0,
+  "fecha_vista" timestamp DEFAULT (now())
+);
+
+CREATE TABLE "roles_sistema" (
+  "id_rol" serial PRIMARY KEY,
+  "codigo_rol" varchar(50) UNIQUE NOT NULL,
+  "nombre_rol" varchar(100) NOT NULL,
+  "descripcion" text,
+  "permisos" json NOT NULL,
+  "fecha_creacion" timestamp DEFAULT (now())
+);
+
+CREATE TABLE "usuario_roles" (
+  "id_usuario_rol" serial PRIMARY KEY,
+  "id_usuario" integer NOT NULL,
+  "id_rol" integer NOT NULL,
+  "fecha_asignacion" timestamp DEFAULT (now()),
+  "id_administrador_asigna" integer
+);
+
+CREATE TABLE "configuracion_sistema" (
+  "id_configuracion" serial PRIMARY KEY,
+  "clave" varchar(100) UNIQUE NOT NULL,
+  "valor" json NOT NULL,
+  "tipo_dato" varchar(50) NOT NULL,
+  "descripcion" text,
+  "es_editable" boolean DEFAULT true,
+  "categoria" varchar(50) DEFAULT 'general',
+  "fecha_creacion" timestamp DEFAULT (now()),
+  "fecha_actualizacion" timestamp DEFAULT (now())
+);
+
+CREATE TABLE "logs_sistema" (
+  "id_log" serial PRIMARY KEY,
+  "id_nivel_log" integer NOT NULL,
+  "modulo" varchar(100) NOT NULL,
+  "mensaje" text NOT NULL,
+  "metadata" json,
+  "id_usuario" integer,
+  "ip_address" varchar(45),
+  "user_agent" text,
+  "fecha_log" timestamp DEFAULT (now())
+);
+
+CREATE TABLE "notificaciones" (
+  "id_notificacion" serial PRIMARY KEY,
+  "id_usuario_destino" integer NOT NULL,
+  "id_tipo_notificacion" integer NOT NULL,
+  "titulo" varchar(255) NOT NULL,
+  "mensaje" text NOT NULL,
+  "enlace_accion" varchar(500),
+  "leida" boolean DEFAULT false,
+  "fecha_creacion" timestamp DEFAULT (now()),
+  "fecha_lectura" timestamp
+);
+
+CREATE TABLE "sesiones_activas" (
+  "id_sesion" serial PRIMARY KEY,
+  "id_usuario" integer NOT NULL,
+  "token_sesion" varchar(500) UNIQUE NOT NULL,
+  "dispositivo" varchar(255),
+  "sistema_operativo" varchar(100),
+  "navegador" varchar(100),
+  "ip_address" varchar(45),
+  "fecha_inicio" timestamp DEFAULT (now()),
+  "fecha_ultima_actividad" timestamp DEFAULT (now()),
+  "fecha_expiracion" timestamp NOT NULL,
+  "id_estado_general" integer NOT NULL
+);
+
+CREATE TABLE "faq_categorias" (
+  "id_faq_categoria" serial PRIMARY KEY,
+  "nombre" varchar(100) NOT NULL,
+  "descripcion" text,
+  "orden" integer DEFAULT 0,
+  "id_estado_general" integer NOT NULL
+);
+
+CREATE TABLE "preguntas_frecuentes" (
+  "id_faq" serial PRIMARY KEY,
+  "id_faq_categoria" integer NOT NULL,
+  "pregunta" text NOT NULL,
+  "respuesta" text NOT NULL,
+  "orden" integer DEFAULT 0,
+  "id_estado_general" integer NOT NULL,
+  "fecha_creacion" timestamp DEFAULT (now()),
+  "fecha_actualizacion" timestamp DEFAULT (now())
+);
+
+ALTER TABLE "usuarios" ADD FOREIGN KEY ("id_tipo_usuario") REFERENCES "tipos_usuario" ("id_tipo_usuario");
+
+ALTER TABLE "usuarios" ADD FOREIGN KEY ("id_estado_usuario") REFERENCES "estados_usuario" ("id_estado_usuario");
+
+ALTER TABLE "usuarios" ADD FOREIGN KEY ("id_usuario") REFERENCES "perfiles" ("id_usuario");
+
+ALTER TABLE "usuarios" ADD FOREIGN KEY ("id_usuario") REFERENCES "estudiantes" ("id_usuario");
+
+ALTER TABLE "usuarios" ADD FOREIGN KEY ("id_usuario") REFERENCES "docentes" ("id_usuario");
+
+ALTER TABLE "usuarios" ADD FOREIGN KEY ("id_usuario") REFERENCES "aspirantes" ("id_usuario");
+
+ALTER TABLE "usuarios" ADD FOREIGN KEY ("id_usuario") REFERENCES "administradores" ("id_usuario");
+
+ALTER TABLE "categorias" ADD FOREIGN KEY ("id_categoria_padre") REFERENCES "categorias" ("id_categoria");
+
+ALTER TABLE "categorias" ADD FOREIGN KEY ("id_estado_general") REFERENCES "estados_general" ("id_estado_general");
+
+ALTER TABLE "cursos" ADD FOREIGN KEY ("id_docente_responsable") REFERENCES "docentes" ("id_docente");
+
+ALTER TABLE "cursos" ADD FOREIGN KEY ("id_estado_general") REFERENCES "estados_general" ("id_estado_general");
+
+ALTER TABLE "contenidos" ADD FOREIGN KEY ("id_autor") REFERENCES "usuarios" ("id_usuario");
+
+ALTER TABLE "contenidos" ADD FOREIGN KEY ("id_tipo_contenido") REFERENCES "tipos_contenido" ("id_tipo_contenido");
+
+ALTER TABLE "contenidos" ADD FOREIGN KEY ("id_estado_contenido") REFERENCES "estados_contenido" ("id_estado_contenido");
+
+ALTER TABLE "contenido_categorias" ADD FOREIGN KEY ("id_contenido") REFERENCES "contenidos" ("id_contenido");
+
+ALTER TABLE "contenido_categorias" ADD FOREIGN KEY ("id_categoria") REFERENCES "categorias" ("id_categoria");
+
+ALTER TABLE "contenido_cursos" ADD FOREIGN KEY ("id_contenido") REFERENCES "contenidos" ("id_contenido");
+
+ALTER TABLE "contenido_cursos" ADD FOREIGN KEY ("id_curso") REFERENCES "cursos" ("id_curso");
+
+ALTER TABLE "contenido_palabras_clave" ADD FOREIGN KEY ("id_contenido") REFERENCES "contenidos" ("id_contenido");
+
+ALTER TABLE "interacciones" ADD FOREIGN KEY ("id_usuario") REFERENCES "usuarios" ("id_usuario");
+
+ALTER TABLE "interacciones" ADD FOREIGN KEY ("id_contenido") REFERENCES "contenidos" ("id_contenido");
+
+ALTER TABLE "interacciones" ADD FOREIGN KEY ("id_tipo_interaccion") REFERENCES "tipos_interaccion" ("id_tipo_interaccion");
+
+ALTER TABLE "comentarios" ADD FOREIGN KEY ("id_usuario") REFERENCES "usuarios" ("id_usuario");
+
+ALTER TABLE "comentarios" ADD FOREIGN KEY ("id_contenido") REFERENCES "contenidos" ("id_contenido");
+
+ALTER TABLE "comentarios" ADD FOREIGN KEY ("id_comentario_padre") REFERENCES "comentarios" ("id_comentario");
+
+ALTER TABLE "comentarios" ADD FOREIGN KEY ("id_estado_general") REFERENCES "estados_general" ("id_estado_general");
+
+ALTER TABLE "reportes" ADD FOREIGN KEY ("id_usuario_reportero") REFERENCES "usuarios" ("id_usuario");
+
+ALTER TABLE "reportes" ADD FOREIGN KEY ("id_contenido") REFERENCES "contenidos" ("id_contenido");
+
+ALTER TABLE "reportes" ADD FOREIGN KEY ("id_comentario") REFERENCES "comentarios" ("id_comentario");
+
+ALTER TABLE "reportes" ADD FOREIGN KEY ("id_tipo_reporte") REFERENCES "tipos_reporte" ("id_tipo_reporte");
+
+ALTER TABLE "reportes" ADD FOREIGN KEY ("id_estado_reporte") REFERENCES "estados_reporte" ("id_estado_reporte");
+
+ALTER TABLE "reportes" ADD FOREIGN KEY ("id_administrador_resuelve") REFERENCES "administradores" ("id_administrador");
+
+ALTER TABLE "seguimientos" ADD FOREIGN KEY ("id_usuario_seguidor") REFERENCES "usuarios" ("id_usuario");
+
+ALTER TABLE "seguimientos" ADD FOREIGN KEY ("id_usuario_seguido") REFERENCES "usuarios" ("id_usuario");
+
+ALTER TABLE "favoritos" ADD FOREIGN KEY ("id_usuario") REFERENCES "usuarios" ("id_usuario");
+
+ALTER TABLE "favoritos" ADD FOREIGN KEY ("id_contenido") REFERENCES "contenidos" ("id_contenido");
+
+ALTER TABLE "historial_busquedas" ADD FOREIGN KEY ("id_usuario") REFERENCES "usuarios" ("id_usuario");
+
+ALTER TABLE "historial_vistas" ADD FOREIGN KEY ("id_usuario") REFERENCES "usuarios" ("id_usuario");
+
+ALTER TABLE "historial_vistas" ADD FOREIGN KEY ("id_contenido") REFERENCES "contenidos" ("id_contenido");
+
+ALTER TABLE "usuario_roles" ADD FOREIGN KEY ("id_usuario") REFERENCES "usuarios" ("id_usuario");
+
+ALTER TABLE "usuario_roles" ADD FOREIGN KEY ("id_rol") REFERENCES "roles_sistema" ("id_rol");
+
+ALTER TABLE "usuario_roles" ADD FOREIGN KEY ("id_administrador_asigna") REFERENCES "administradores" ("id_administrador");
+
+ALTER TABLE "logs_sistema" ADD FOREIGN KEY ("id_nivel_log") REFERENCES "niveles_log" ("id_nivel_log");
+
+ALTER TABLE "logs_sistema" ADD FOREIGN KEY ("id_usuario") REFERENCES "usuarios" ("id_usuario");
+
+ALTER TABLE "notificaciones" ADD FOREIGN KEY ("id_usuario_destino") REFERENCES "usuarios" ("id_usuario");
+
+ALTER TABLE "notificaciones" ADD FOREIGN KEY ("id_tipo_notificacion") REFERENCES "tipos_notificacion" ("id_tipo_notificacion");
+
+ALTER TABLE "sesiones_activas" ADD FOREIGN KEY ("id_usuario") REFERENCES "usuarios" ("id_usuario");
+
+ALTER TABLE "sesiones_activas" ADD FOREIGN KEY ("id_estado_general") REFERENCES "estados_general" ("id_estado_general");
+
+ALTER TABLE "preguntas_frecuentes" ADD FOREIGN KEY ("id_faq_categoria") REFERENCES "faq_categorias" ("id_faq_categoria");
+
+ALTER TABLE "preguntas_frecuentes" ADD FOREIGN KEY ("id_estado_general") REFERENCES "estados_general" ("id_estado_general");
+
+ALTER TABLE "faq_categorias" ADD FOREIGN KEY ("id_estado_general") REFERENCES "estados_general" ("id_estado_general");
+
+ALTER TABLE "preferencias_usuario" ADD FOREIGN KEY ("id_usuario") REFERENCES "usuarios" ("id_usuario");
+
+ALTER TABLE "intereses_usuario" ADD FOREIGN KEY ("id_usuario") REFERENCES "usuarios" ("id_usuario");
+
+
+
