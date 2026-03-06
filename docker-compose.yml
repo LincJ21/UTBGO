@@ -1,0 +1,77 @@
+# ===========================================
+# UTBGO — Docker Compose para Desarrollo Local
+# ===========================================
+
+version: '3.8'
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - GIN_MODE=release
+      - DB_CONNECTION_STRING=${DB_CONNECTION_STRING}
+      - STORAGE_PROVIDER=${STORAGE_PROVIDER:-cloudinary}
+      - CLOUDINARY_URL=${CLOUDINARY_URL}
+      - REDIS_URL=${REDIS_URL}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - INSTITUTIONAL_DOMAIN=${INSTITUTIONAL_DOMAIN:-utb.edu.co}
+      - ADMIN_DOMAIN=${ADMIN_DOMAIN:-admin.utb.edu.co}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-*}
+      - TRACKING_SERVICE_URL=${TRACKING_SERVICE_URL:-http://tracking:8091}
+      - TRACKING_API_KEY=${TRACKING_API_KEY}
+      - RECOMMENDATIONS_SERVICE_URL=${RECOMMENDATIONS_SERVICE_URL:-http://recommendations:8090}
+      - RECOMMENDATIONS_API_KEY=${RECOMMENDATIONS_API_KEY}
+      - PRIMARY_RECOMMENDATION_ENGINE=${PRIMARY_RECOMMENDATION_ENGINE:-custom_ml}
+      - ADMIN_EMAILS=${ADMIN_EMAILS}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  tracking:
+    build:
+      context: ./tracking-service
+      dockerfile: Dockerfile
+    ports:
+      - "8091:8091"
+    environment:
+      - PROJECT_NAME=Tracking Service
+      - API_KEY=${TRACKING_API_KEY}
+      - DATABASE_URL=${DB_CONNECTION_STRING}
+      - REDIS_URL=${REDIS_URL}
+    restart: unless-stopped
+
+  recommendations:
+    build:
+      context: ./recommendations-service
+      dockerfile: Dockerfile
+    ports:
+      - "8090:8090"
+    environment:
+      - PROJECT_NAME=Recommendation Service
+      - API_KEY=${RECOMMENDATIONS_API_KEY}
+      - DATABASE_URL=${DB_CONNECTION_STRING}
+      - REDIS_URL=${REDIS_URL}
+    restart: unless-stopped
+
+  # Redis para cache y rate limiting distribuido (opcional para producción)
+  # redis:
+  #   image: redis:7-alpine
+  #   ports:
+  #     - "6379:6379"
+  #   volumes:
+  #     - redis_data:/data
+  #   restart: unless-stopped
+
+# volumes:
+#   redis_data:

@@ -1,0 +1,57 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# IDEs and Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Credentials and config
+.env
+.env.local
+.env.production
+*.pem
+
+# Models and data
+# Explicitly ignore locally cached models to avoid bloating the git repo
+app/models_storage/*.pkl
+app/models_storage/*.model
+app/models_storage/*.txt
+notebooks/.ipynb_checkpoints/
+*.csv
+*.parquet
+
+# Other
+.DS_Store
+*.log

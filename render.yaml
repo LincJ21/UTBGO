@@ -1,0 +1,83 @@
+# ─────────────────────────────────────────────────────────
+# UTBGO — Render Blueprint (render.yaml)
+# Despliegue de Monorepo (7 Servicios)
+# ─────────────────────────────────────────────────────────
+
+services:
+  # 1. API Principal (Backend Go)
+  - type: web
+    name: utbgo-api
+    env: docker
+    dockerContext: .
+    dockerfilePath: Dockerfile
+    plan: starter
+    envVars:
+      - key: GIN_MODE
+        value: release
+      - key: PORT
+        value: 8080
+      - fromGroup: utbgo-shared-secrets
+
+  # 2. Tracking Service (Microservicio Go)
+  - type: web
+    name: utbgo-tracking
+    env: docker
+    dockerContext: ./tracking-service
+    dockerfilePath: Dockerfile
+    plan: starter
+    envVars:
+      - key: GIN_MODE
+        value: release
+      - key: PORT
+        value: 8091
+      - fromGroup: utbgo-shared-secrets
+
+  # 3. Gorse Master (Cerebro + Dashboard)
+  - type: web
+    name: gorse-master
+    env: docker
+    dockerContext: ./recommendations-service
+    dockerfilePath: Dockerfile
+    plan: standard # Gorse Master requiere al menos 1GB-2GB de RAM
+    envVars:
+      - key: GORSE_CACHE_STORE
+        fromRedisName: gorse-redis
+        property: connectionString
+      - key: GORSE_DATA_STORE
+        fromDatabaseName: gorse-db
+        property: connectionString
+
+  # 4. Gorse Server (API Recomendaciones)
+  - type: web
+    name: gorse-server
+    env: docker
+    dockerCommand: "gorse-server --master-host gorse-master --master-port 8086 --http-host 0.0.0.0 --http-port 10000"
+    plan: starter
+    envVars:
+      - key: PORT
+        value: 10000
+
+  # 5. Gorse Worker (ML Offline)
+  - type: worker
+    name: gorse-worker
+    env: docker
+    dockerCommand: "gorse-worker --master-host gorse-master --master-port 8086"
+    plan: standard # Recomendado para entrenamiento ML
+
+databases:
+  - name: gorse-db
+    plan: starter
+    user: gorse
+
+redis:
+  - name: gorse-redis
+    plan: starter
+
+envVarGroups:
+  - name: utbgo-shared-secrets
+    envVars:
+      - key: DB_CONNECTION_STRING
+      - key: JWT_SECRET_KEY
+      - key: CLOUDINARY_URL
+      - key: GORSE_API_KEY
+      - key: ALLOWED_ORIGINS
