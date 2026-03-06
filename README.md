@@ -54,10 +54,4 @@ El sistema está diseñado bajo una arquitectura de microservicios moderna:
 - **ML Recommendations (Python):** Generación de feeds personalizados.
 - **Infraestructura Cloud:** Neon (PostgreSQL), Upstash (Redis), Cloudinary (Media).
 
----
 
-## 🔒 Auditoría y Calidad (Clean Code)
-Este proyecto cumple con estándares de Clean Code y OWASP. 
-- **Guía de Migración Gorse:** [GORSE_MIGRATION_GUIDE.md](GORSE_MIGRATION_GUIDE.md)
-- **Dashboard de Métricas:** [NEON_METRICS_DASHBOARD.sql](NEON_METRICS_DASHBOARD.sql)
-- **Reporte de Producción:** `docs/production_readiness_report.md`
