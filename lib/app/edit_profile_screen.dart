@@ -1,6 +1,8 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'config/app_config.dart';
+import 'config/api_client.dart';
 
 // ─────────────────────────────────────────────────────────────
 //  PANTALLA DE EDITAR PERFIL
@@ -61,16 +63,17 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   // ── Estado ──
   File? _selectedImage;
   String _selectedRole = 'Estudiante';
+  String _cvlacUrl = '';
+  String _websiteUrl = '';
   bool _isSaving = false;
   bool _hasChanges = false;
 
   // Opciones de Rol en UTB
   static const _roles = [
+    'Aspirante',
     'Estudiante',
-    'Docente',
-    'Administrativo',
-    'Egresado',
-    'Investigador',
+    'Profesor',
+    'Administrador',
   ];
 
   static const int _maxBioLength = 200;
@@ -92,7 +95,21 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     _usernameController = TextEditingController(text: data.username);
     _bioController = TextEditingController(text: data.bio);
     _facultyController = TextEditingController(text: data.faculty);
-    _selectedRole = data.role;
+    
+    // Mapeo seguro del rol del backend a las opciones del UI (exactamente 4 permitidas)
+    final initialRole = data.role.toLowerCase();
+    if (initialRole.contains('profesor') || initialRole.contains('docente')) {
+      _selectedRole = 'Profesor';
+    } else if (initialRole.contains('admin') || initialRole.contains('moderador') || initialRole.contains('administrativo')) {
+      _selectedRole = 'Administrador';
+    } else if (initialRole.contains('aspirante')) {
+      _selectedRole = 'Aspirante';
+    } else {
+      _selectedRole = 'Estudiante'; // Fallback seguro
+    }
+
+    _cvlacUrl = data.cvlacUrl ?? '';
+    _websiteUrl = data.websiteUrl ?? '';
 
     // Detectar cambios en cualquier campo
     for (final c in [
@@ -171,24 +188,38 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     setState(() => _isSaving = true);
 
     try {
-      // TODO: Llamar a ApiClient para guardar los datos del perfil.
-      //   final api = ApiClient();
-      //   await api.post(
-      //     AppConfig.profileMeEndpoint,
-      //     body: { 'name': _nameController.text, ... },
-      //     requiresAuth: true,
-      //   );
-      //
-      //   if (_selectedImage != null) {
-      //     await api.uploadFile(
-      //       AppConfig.profileAvatarEndpoint,
-      //       file: _selectedImage!,
-      //       fieldName: 'avatar',
-      //     );
-      //   }
+      final api = ApiClient();
+      
+      final body = {
+        'name': _nameController.text.trim(),
+        'bio': _bioController.text.trim(),
+        'faculty': _facultyController.text.trim(),
+        'cvlac_url': _cvlacUrl.trim(),
+        'website_url': _websiteUrl.trim(),
+      };
 
-      // Simulación de guardado
-      await Future.delayed(const Duration(seconds: 1));
+      final response = await api.patch(
+        AppConfig.profileMeEndpoint,
+        body: body,
+        requiresAuth: true,
+      );
+
+      if (!response.isSuccess) {
+        throw Exception(response.error?.message ?? 'Error al actualizar perfil');
+      }
+
+      if (_selectedImage != null) {
+        final avatarResponse = await api.uploadFile(
+          AppConfig.profileAvatarEndpoint,
+          file: _selectedImage!,
+          fieldName: 'avatar',
+        );
+        if (!avatarResponse.isSuccess) {
+           ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Perfil guardado pero falló el avatar: ${avatarResponse.error?.message}')),
+           );
+        }
+      }
 
       if (!mounted) return;
 
@@ -285,8 +316,22 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             ),
             const SizedBox(height: 16),
             _buildLabeledField(
-              label: 'Rol en UTB',
-              child: _buildRoleDropdown(),
+              label: 'Rol en UTB (Solo Lectura)',
+              child: TextFormField(
+                initialValue: _selectedRole,
+                enabled: false,
+                decoration: InputDecoration(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  disabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: Colors.grey[300]!),
+                  ),
+                  fillColor: Colors.grey[100],
+                  filled: true,
+                ),
+                style: TextStyle(fontSize: 15, color: Colors.grey[600], fontWeight: FontWeight.w500),
+              ),
             ),
             const SizedBox(height: 16),
             _buildLabeledField(
@@ -556,42 +601,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       onChanged: (_) => setState(() {}),
     );
   }
-
-  Widget _buildRoleDropdown() {
-    return DropdownButtonFormField<String>(
-      value: _selectedRole,
-      decoration: InputDecoration(
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: _fieldBorder),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: _fieldBorder),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: _primaryBlue, width: 1.5),
-        ),
-      ),
-      icon: Icon(Icons.keyboard_arrow_down, color: Colors.grey[600]),
-      style: const TextStyle(fontSize: 15, color: Colors.black87),
-      items: _roles
-          .map((role) => DropdownMenuItem(value: role, child: Text(role)))
-          .toList(),
-      onChanged: (value) {
-        if (value != null) {
-          setState(() {
-            _selectedRole = value;
-            _hasChanges = true;
-          });
-        }
-      },
-    );
-  }
-
+  // Rol dropdown eliminado por seguridad
   Widget _buildFacultyField() {
     return TextFormField(
       controller: _facultyController,
@@ -762,9 +772,16 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           ),
           TextButton(
             onPressed: () {
-              // TODO: Guardar el enlace en el estado / backend.
+              final newLink = controller.text.trim();
+              setState(() {
+                if (linkType.contains('CvLAC')) {
+                  _cvlacUrl = newLink;
+                } else {
+                  _websiteUrl = newLink;
+                }
+                _hasChanges = true;
+              });
               Navigator.pop(context);
-              setState(() => _hasChanges = true);
               ScaffoldMessenger.of(this.context).showSnackBar(
                 SnackBar(
                   content: Text('$linkType actualizado'),

@@ -12,6 +12,7 @@ import (
 
 // TrackingEvent representa el cuerpo de la petición para el tracking-service.
 type TrackingEvent struct {
+	UserID     int            `json:"user_id"`
 	ContentID  int            `json:"content_id"`
 	EventType  string         `json:"event_type"`
 	EventValue float64        `json:"event_value"`
@@ -58,7 +59,7 @@ func SendTrackingEvent(ctx context.Context, token string, event TrackingEvent) {
 		}
 		defer resp.Body.Close()
 
-		if resp.StatusCode != http.StatusCreated {
+		if resp.StatusCode != http.StatusAccepted {
 			Logger.Warn("Tracking-service respondió con error", "status", resp.Status)
 		}
 	}()

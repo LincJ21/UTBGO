@@ -21,6 +21,9 @@ var JWT_SECRET_KEY string
 
 // Global variables to store IDs from reference tables, initialized in main.
 var videoContentTypeID int
+var flashcardContentTypeID int
+var pollContentTypeID int
+var imageContentTypeID int
 var publishedContentStateID int
 var likeInteractionTypeID int
 var bookmarkInteractionTypeID int
@@ -186,6 +189,11 @@ func main() {
 		Logger.Info("Roles de administración verificados/creados")
 	}
 
+	// --- Inicialización de Tabla de Notificaciones ---
+	if err := Repos.Notifications.EnsureTable(context.Background()); err != nil {
+		Logger.Warn("Error creando tabla de notificaciones", "error", err)
+	}
+
 	// --- Inicialización del Proveedor de Almacenamiento ---
 	// Se selecciona automáticamente según la variable STORAGE_PROVIDER en .env.
 	// Valores soportados: "azure" (por defecto), "cloudinary".
@@ -217,6 +225,31 @@ func main() {
 		Logger.Warn("Error al obtener id_tipo_contenido para 'video'", "error", err)
 	}
 	Logger.Info("ID de tipo de contenido cargado", "tipo", "video", "id", videoContentTypeID)
+
+	err = DB.QueryRow("SELECT id_tipo_contenido FROM tipos_contenido WHERE codigo = $1", "flashcard").Scan(&flashcardContentTypeID)
+	if err != nil {
+		// Intentar crear el tipo si no existe
+		err = DB.QueryRow("INSERT INTO tipos_contenido (codigo, nombre, descripcion) VALUES ('flashcard', 'Flashcard', 'Tarjeta de estudio') ON CONFLICT (codigo) DO UPDATE SET codigo=EXCLUDED.codigo RETURNING id_tipo_contenido").Scan(&flashcardContentTypeID)
+		if err != nil {
+			Logger.Warn("Error al obtener/crear id_tipo_contenido para 'flashcard'", "error", err)
+		}
+	}
+	Logger.Info("ID de tipo de contenido cargado", "tipo", "flashcard", "id", flashcardContentTypeID)
+
+	err = DB.QueryRow("SELECT id_tipo_contenido FROM tipos_contenido WHERE codigo = $1", "encuesta").Scan(&pollContentTypeID)
+	if err != nil {
+		err = DB.QueryRow("INSERT INTO tipos_contenido (codigo, nombre, descripcion) VALUES ('encuesta', 'Encuesta', 'Encuesta con opciones') ON CONFLICT (codigo) DO UPDATE SET codigo=EXCLUDED.codigo RETURNING id_tipo_contenido").Scan(&pollContentTypeID)
+		if err != nil {
+			Logger.Warn("Error al obtener/crear id_tipo_contenido para 'encuesta'", "error", err)
+		}
+	}
+	Logger.Info("ID de tipo de contenido cargado", "tipo", "encuesta", "id", pollContentTypeID)
+
+	err = DB.QueryRow("SELECT id_tipo_contenido FROM tipos_contenido WHERE codigo = $1", "imagen").Scan(&imageContentTypeID)
+	if err != nil {
+		err = DB.QueryRow("INSERT INTO tipos_contenido (codigo, nombre, descripcion) VALUES ('imagen', 'Imagen', 'Imágenes') ON CONFLICT (codigo) DO UPDATE SET codigo=EXCLUDED.codigo RETURNING id_tipo_contenido").Scan(&imageContentTypeID)
+	}
+	Logger.Info("ID de tipo de contenido cargado", "tipo", "imagen", "id", imageContentTypeID)
 
 	err = DB.QueryRow("SELECT id_estado_contenido FROM estados_contenido WHERE codigo = $1", "publicado").Scan(&publishedContentStateID)
 	if err != nil {
@@ -421,7 +454,34 @@ func main() {
 		profile := v1.Group("/profile")
 		{
 			profile.GET("/me", AuthMiddleware(), handleGetProfile)
+			profile.PATCH("/me", AuthMiddleware(), handleUpdateProfile)
 			profile.POST("/avatar", AuthMiddleware(), handleUploadAvatar)
+			profile.POST("/interests", AuthMiddleware(), handleUpdateInterestsV2)
+		}
+
+		// --- Flashcards ---
+		flashcards := v1.Group("/flashcards")
+		{
+			flashcards.POST("", AuthMiddleware(), handleCreateFlashcard)   // Crear flashcard
+			flashcards.GET("/:id", handleGetFlashcard)                     // Obtener flashcard
+		}
+
+		// --- Encuestas ---
+		polls := v1.Group("/polls")
+		{
+			polls.POST("", AuthMiddleware(), handleCreatePoll)    // Crear encuesta
+			polls.GET("/:id", AuthMiddleware(), handleGetPoll)    // Obtener encuesta
+			polls.POST("/:id/vote", AuthMiddleware(), handleVotePoll) // Votar
+		}
+
+		// --- Notificaciones ---
+		notifications := v1.Group("/notifications")
+		notifications.Use(AuthMiddleware())
+		{
+			notifications.GET("", handleGetNotifications)                // Listar notificaciones
+			notifications.GET("/unread-count", handleGetUnreadCount)    // Conteo de no leídas
+			notifications.PATCH("/:id/read", handleMarkNotificationRead) // Marcar una como leída
+			notifications.PATCH("/read-all", handleMarkAllNotificationsRead) // Marcar todas como leídas
 		}
 
 		// --- Administración ---

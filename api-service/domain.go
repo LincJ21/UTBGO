@@ -14,6 +14,11 @@ type User struct {
 	Email        string    `json:"email"`
 	Role         string    `json:"role,omitempty"` // Añadido para caché
 	AvatarURL    string    `json:"avatar_url,omitempty"`
+	Interests    []string  `json:"interests,omitempty"` // Añadido para Cold Start
+	Bio          string    `json:"bio,omitempty"`
+	Faculty      string    `json:"faculty,omitempty"`
+	CvlacURL     string    `json:"cvlac_url,omitempty"`
+	WebsiteURL   string    `json:"website_url,omitempty"`
 	PasswordHash string    `json:"-"` // Nunca serializar
 	CreatedAt    time.Time `json:"created_at"`
 	LastLogin    time.Time `json:"last_login,omitempty"`
@@ -21,11 +26,24 @@ type User struct {
 
 // Profile representa el perfil de un usuario.
 type Profile struct {
-	UserID    int    `json:"user_id"`
-	Name      string `json:"name"`
-	LastName  string `json:"last_name"`
-	AvatarURL string `json:"avatar_url,omitempty"`
-	Bio       string `json:"bio,omitempty"`
+	UserID     int    `json:"user_id"`
+	Name       string `json:"name"`
+	LastName   string `json:"last_name"`
+	AvatarURL  string `json:"avatar_url,omitempty"`
+	Bio        string `json:"bio,omitempty"`
+	Faculty    string `json:"faculty,omitempty"`
+	CvlacURL   string `json:"cvlac_url,omitempty"`
+	WebsiteURL string `json:"website_url,omitempty"`
+}
+
+// UpdateProfileRequest representa los datos enviados para actualizar el perfil.
+type UpdateProfileRequest struct {
+	Name       string `json:"name" binding:"required,max=100"`
+	Bio        string `json:"bio" binding:"max=200"`
+	Faculty    string `json:"faculty" binding:"max=100"`
+	Role       string `json:"role"` // Opcional, requiere validación de acceso en backend
+	CvlacURL   string `json:"cvlac_url" binding:"max=255"`
+	WebsiteURL string `json:"website_url" binding:"max=255"`
 }
 
 // Video representa un contenido de video.
@@ -44,6 +62,7 @@ type Video struct {
 	IsLiked      bool      `json:"is_liked"`
 	IsBookmarked bool      `json:"is_bookmarked"`
 	CreatedAt    time.Time `json:"created_at"`
+	ContentType  string    `json:"content_type"`
 }
 
 // Comment representa un comentario en un video.
@@ -55,6 +74,45 @@ type Comment struct {
 	VideoID   int       `json:"video_id"`
 	Text      string    `json:"text"`
 	CreatedAt time.Time `json:"created_at"`
+}
+
+// Flashcard representa una tarjeta de estudio con frente y reverso.
+type Flashcard struct {
+	ID            int    `json:"id"`
+	ContentID     int    `json:"content_id"`
+	FrontText     string `json:"front_text"`
+	BackText      string `json:"back_text"`
+	FrontImageURL string `json:"front_image_url,omitempty"`
+	BackImageURL  string `json:"back_image_url,omitempty"`
+	// Campos heredados de contenidos
+	Title       string    `json:"title,omitempty"`
+	Description string    `json:"description,omitempty"`
+	AuthorName  string    `json:"author_name,omitempty"`
+	Likes       int       `json:"likes,omitempty"`
+	CreatedAt   time.Time `json:"created_at,omitempty"`
+}
+
+// Poll representa una encuesta con opciones de respuesta.
+type Poll struct {
+	ID         int          `json:"id"`
+	ContentID  int          `json:"content_id"`
+	Question   string       `json:"question"`
+	Options    []PollOption `json:"options"`
+	TotalVotes int          `json:"total_votes"`
+	HasVoted   bool         `json:"has_voted"`
+	// Campos heredados de contenidos
+	Title       string    `json:"title,omitempty"`
+	Description string    `json:"description,omitempty"`
+	AuthorName  string    `json:"author_name,omitempty"`
+	CreatedAt   time.Time `json:"created_at,omitempty"`
+}
+
+// PollOption representa una opción de respuesta en una encuesta.
+type PollOption struct {
+	ID    int    `json:"id"`
+	Text  string `json:"text"`
+	Votes int    `json:"votes"`
+	Order int    `json:"order"`
 }
 
 // --- Modelos de Administración ---
@@ -126,6 +184,21 @@ type RoleCount struct {
 	RoleCode string `json:"role_code"`
 	RoleName string `json:"role_name"`
 	Count    int    `json:"count"`
+}
+
+// --- Modelos de Notificaciones ---
+
+// Notification representa una notificación para un usuario.
+type Notification struct {
+	ID        int       `json:"id"`
+	UserID    int       `json:"user_id"`
+	Type      string    `json:"type"` // like, comment, follow, announcement
+	Title     string    `json:"title"`
+	Body      string    `json:"body"`
+	ActorName string    `json:"actor_name,omitempty"` // Quien generó la notificación
+	RefID     int       `json:"ref_id,omitempty"`     // ID del recurso relacionado (video, comentario)
+	IsRead    bool      `json:"is_read"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // PaginatedResult es una respuesta genérica con paginación.
@@ -284,29 +357,80 @@ type AdminRepository interface {
 	EnsureAdminRole(ctx context.Context) error
 }
 
+// NotificationRepository define las operaciones de persistencia para notificaciones.
+type NotificationRepository interface {
+	// Create crea una nueva notificación.
+	Create(ctx context.Context, n *Notification) (int, error)
+
+	// GetByUserID obtiene las notificaciones de un usuario con paginación.
+	GetByUserID(ctx context.Context, userID, limit, offset int) ([]Notification, int, error)
+
+	// MarkAsRead marca una notificación como leída.
+	MarkAsRead(ctx context.Context, notificationID, userID int) error
+
+	// MarkAllAsRead marca todas las notificaciones de un usuario como leídas.
+	MarkAllAsRead(ctx context.Context, userID int) error
+
+	// GetUnreadCount obtiene el número de notificaciones no leídas de un usuario.
+	GetUnreadCount(ctx context.Context, userID int) (int, error)
+
+	// EnsureTable crea la tabla de notificaciones si no existe.
+	EnsureTable(ctx context.Context) error
+}
+
+// FlashcardRepository define las operaciones de persistencia para flashcards.
+type FlashcardRepository interface {
+	// Create crea una nueva flashcard y devuelve su ID.
+	Create(ctx context.Context, f *Flashcard) (int, error)
+
+	// GetByContentID obtiene la flashcard asociada a un contenido.
+	GetByContentID(ctx context.Context, contentID int) (*Flashcard, error)
+}
+
+// PollRepository define las operaciones de persistencia para encuestas.
+type PollRepository interface {
+	// Create crea una encuesta con sus opciones.
+	Create(ctx context.Context, p *Poll) (int, error)
+
+	// GetByContentID obtiene una encuesta completa con opciones y totales.
+	GetByContentID(ctx context.Context, contentID int) (*Poll, error)
+
+	// Vote registra el voto de un usuario en una encuesta.
+	Vote(ctx context.Context, pollID, optionID, userID int) error
+
+	// HasVoted verifica si un usuario ya votó en una encuesta.
+	HasVoted(ctx context.Context, pollID, userID int) (bool, error)
+}
+
 // --- Repositorio Agregado (Unit of Work) ---
 
 // Repositories agrupa todos los repositorios para inyección de dependencias.
 type Repositories struct {
-	Users        UserRepository
-	Profiles     ProfileRepository
-	Videos       VideoRepository
-	Interactions InteractionRepository
-	Bookmarks    BookmarkRepository
-	Comments     CommentRepository
-	Admin        AdminRepository
+	Users         UserRepository
+	Profiles      ProfileRepository
+	Videos        VideoRepository
+	Interactions  InteractionRepository
+	Bookmarks     BookmarkRepository
+	Comments      CommentRepository
+	Admin         AdminRepository
+	Notifications NotificationRepository
+	Flashcards    FlashcardRepository
+	Polls         PollRepository
 }
 
 // NewRepositories crea una instancia de todos los repositorios usando PostgreSQL.
 func NewRepositories() *Repositories {
 	return &Repositories{
-		Users:        NewPostgresUserRepository(),
-		Profiles:     NewPostgresProfileRepository(),
-		Videos:       NewPostgresVideoRepository(),
-		Interactions: NewPostgresInteractionRepository(),
-		Bookmarks:    NewPostgresBookmarkRepository(),
-		Comments:     NewPostgresCommentRepository(),
-		Admin:        NewPostgresAdminRepository(),
+		Users:         NewPostgresUserRepository(),
+		Profiles:      NewPostgresProfileRepository(),
+		Videos:        NewPostgresVideoRepository(),
+		Interactions:  NewPostgresInteractionRepository(),
+		Bookmarks:     NewPostgresBookmarkRepository(),
+		Comments:      NewPostgresCommentRepository(),
+		Admin:         NewPostgresAdminRepository(),
+		Notifications: NewPostgresNotificationRepository(),
+		Flashcards:    NewPostgresFlashcardRepository(),
+		Polls:         NewPostgresPollRepository(),
 	}
 }
 

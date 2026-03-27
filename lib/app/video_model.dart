@@ -5,8 +5,12 @@ class VideoModel {
   final String videoUrl;
   final String thumbnailUrl;
   final String description;
+  final String authorName;
+  final String contentType;
+  final DateTime createdAt;
   int likes;
   int comments;
+  int views;
   bool isLiked;
   bool isBookmarked;
 
@@ -16,25 +20,54 @@ class VideoModel {
     required this.videoUrl,
     required this.thumbnailUrl,
     required this.description,
+    this.authorName = 'Profesor UTB',
+    this.contentType = 'video',
+    required this.createdAt,
     // Valores iniciales
     required this.likes,
     required this.comments,
+    this.views = 0,
     this.isLiked = false,
     this.isBookmarked = false,
   });
 
+  /// Convierte la instancia a un mapa JSON para almacenamiento local o caché.
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'title': title,
+      'videoUrl': videoUrl,
+      'thumbnail_url': thumbnailUrl,
+      'description': description,
+      'author_name': authorName,
+      'content_type': contentType,
+      'created_at': createdAt.toIso8601String(),
+      'likes': likes,
+      'comments': comments,
+      'views': views,
+      'isLiked': isLiked,
+      'isBookmarked': isBookmarked,
+    };
+  }
+
   /// Constructor para crear un [VideoModel] desde un JSON (usado por el backend de Go).
   factory VideoModel.fromJson(Map<String, dynamic> json) {
     return VideoModel(
-      id: json['id'] ?? '',
+      id: json['id']?.toString() ?? '',
       title: json['title'] ?? 'Sin Título',
-      videoUrl: json['videoUrl'] ?? '',
+      videoUrl: json['video_url'] ?? json['videoUrl'] ?? '',
       thumbnailUrl: json['thumbnail_url'] ?? '',
       description: json['description'] ?? '',
+      authorName: json['author_name'] ?? 'Profesor UTB',
+      contentType: json['content_type'] ?? 'video',
+      createdAt: json['created_at'] != null 
+          ? DateTime.tryParse(json['created_at']) ?? DateTime.now()
+          : DateTime.now(),
       likes: json['likes'] ?? 0,
       comments: json['comments'] ?? 0,
-      isLiked: json['isLiked'] ?? false, // El backend nos diría esto
-      isBookmarked: json['isBookmarked'] ?? false, // Y esto también
+      views: json['views'] ?? 0,
+      isLiked: json['isLiked'] ?? false,
+      isBookmarked: json['isBookmarked'] ?? false,
     );
   }
 
@@ -46,10 +79,14 @@ class VideoModel {
       videoUrl: json['video_url'] ?? '',
       thumbnailUrl: json['thumbnail_url'] ?? '',
       description: json['description'] ?? 'Sin descripción',
-      // En un caso real, estos valores vendrían de nuestra API de Go.
-      // Por ahora, los simulamos si no vienen.
+      authorName: json['author_name'] ?? 'Profesor UTB',
+      contentType: json['content_type'] ?? 'video',
+      createdAt: json['created_at'] != null
+          ? DateTime.tryParse(json['created_at']) ?? DateTime.now()
+          : DateTime.now(),
       likes: json['likes'] ?? 0,
       comments: json['comments'] ?? 0,
+      views: json['views'] ?? 0,
       isLiked: json['is_liked'] ?? false,
       isBookmarked: json['is_bookmarked'] ?? false,
     );
@@ -67,17 +104,20 @@ class VideoModel {
       url = videoFiles.first['link'] ?? ''; // Fallback al primer video disponible
     }
 
+    final author = json['user']?['name'] ?? 'Desconocido';
+
     return VideoModel(
       id: (json['id'] ?? 0).toString(),
-      title: 'Video por ${json['user']?['name'] ?? 'Desconocido'}',
+      title: 'Video por $author',
       videoUrl: url,
-      thumbnailUrl: json['image'] ?? '', // Pexels usa 'image' para la miniatura
-      description: 'Video por ${json['user']?['name'] ?? 'Desconocido'}',
-      // En un caso real, estos valores vendrían de nuestra API de Go.
+      thumbnailUrl: json['image'] ?? '',
+      description: 'Video por $author',
+      authorName: author,
+      createdAt: DateTime.now(),
       likes: (json['id'] % 5000) + 100,
       comments: (json['id'] % 800) + 50,
-      isLiked: false, // Por defecto, no le ha gustado
-      isBookmarked: false, // Por defecto, no está guardado
+      isLiked: false,
+      isBookmarked: false,
     );
   }
 }

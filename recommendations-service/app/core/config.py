@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     API_KEY: str = (os.getenv("RECOMMENDATIONS_API_KEY") or os.getenv("API_KEY") or "super-secret-recs-key").strip().strip("'").strip('"')
     CORS_ORIGINS: list[str] = ["http://localhost", "http://localhost:8000", "http://localhost:3000"]
     
-    MODEL_PATH: str = os.getenv("MODEL_PATH", "app/models_storage/lgbm_model.pkl").strip().strip("'").strip('"')
+    MODEL_PATH: str = os.getenv("MODEL_PATH", "app/models_storage/model.lgb").strip().strip("'").strip('"')
     
     model_config = SettingsConfigDict(
         env_file=".env",

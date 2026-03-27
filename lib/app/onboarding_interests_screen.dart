@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_practica/app/config/api_client.dart';
+import 'package:flutter_practica/app/config/app_config.dart';
 
 class OnboardingInterestsScreen extends StatefulWidget {
   final VoidCallback? onFinish;
@@ -13,6 +15,41 @@ class OnboardingInterestsScreen extends StatefulWidget {
 class _OnboardingInterestsScreenState extends State<OnboardingInterestsScreen> {
   // Estado para mantener los temas seleccionados
   final Set<String> _selectedTopics = {};
+  bool _isLoading = false;
+
+  /// Envía los intereses seleccionados al backend para resolver el Cold Start.
+  Future<void> _submitInterests() async {
+    if (_selectedTopics.isEmpty) return;
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final apiClient = ApiClient();
+      final response = await apiClient.post(
+        '${AppConfig.backendBaseUrl}/api/v1/profile/interests',
+        body: {'interests': _selectedTopics.toList()},
+        requiresAuth: true,
+      );
+
+      if (response.isSuccess) {
+        if (widget.onFinish != null) widget.onFinish!();
+      } else {
+        // Degradar graciosamente: dejarlo pasar aunque falle
+        if (widget.onFinish != null) widget.onFinish!();
+      }
+    } catch (e) {
+      // Degradar graciosamente
+      if (widget.onFinish != null) widget.onFinish!();
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
 
   final List<Map<String, dynamic>> _topics = [
     {
@@ -360,12 +397,8 @@ class _OnboardingInterestsScreenState extends State<OnboardingInterestsScreen> {
               width: double.infinity,
               height: 56,
               child: ElevatedButton(
-                onPressed: canContinue
-                    ? () {
-                        if (widget.onFinish != null) {
-                          widget.onFinish!(); // Resume MainNavigationPage flow
-                        }
-                      }
+                onPressed: (canContinue && !_isLoading)
+                    ? _submitInterests
                     : null,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF001F4E), // Azul súper oscuro (Casi negro)
@@ -375,25 +408,34 @@ class _OnboardingInterestsScreenState extends State<OnboardingInterestsScreen> {
                   ),
                   elevation: 0,
                 ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      'Continuar',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: canContinue ? Colors.white : Colors.grey.shade500,
+                child: _isLoading
+                    ? const SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.5,
+                          color: Colors.white,
+                        ),
+                      )
+                    : Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            'Continuar',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: canContinue ? Colors.white : Colors.grey.shade500,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Icon(
+                            Icons.arrow_forward,
+                            size: 20,
+                            color: canContinue ? Colors.white : Colors.grey.shade500,
+                          ),
+                        ],
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Icon(
-                      Icons.arrow_forward,
-                      size: 20,
-                      color: canContinue ? Colors.white : Colors.grey.shade500,
-                    ),
-                  ],
-                ),
               ),
             ),
           ],

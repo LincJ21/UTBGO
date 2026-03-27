@@ -114,11 +114,14 @@ func NewPostgresProfileRepository() *PostgresProfileRepository {
 func (r *PostgresProfileRepository) FindByUserID(ctx context.Context, userID int) (*Profile, error) {
 	start := time.Now()
 	var profile Profile
-	var avatarURL, bio sql.NullString
+	var avatarURL, bio, faculty, cvlac, website sql.NullString
 
 	err := DB.QueryRowContext(ctx, `
-		SELECT id_usuario, nombre, COALESCE(apellido, ''), avatar_url, COALESCE(biografia, '')
-		FROM perfiles WHERE id_usuario = $1`, userID).Scan(&profile.UserID, &profile.Name, &profile.LastName, &avatarURL, &bio)
+		SELECT id_usuario, nombre, COALESCE(apellido, ''), avatar_url, COALESCE(biografia, ''),
+		       COALESCE(facultad, ''), cvlac_url, website_url
+		FROM perfiles WHERE id_usuario = $1`, userID).Scan(
+		&profile.UserID, &profile.Name, &profile.LastName, &avatarURL, &bio,
+		&faculty, &cvlac, &website)
 
 	LogDB("SELECT", "perfiles", time.Since(start).Milliseconds(), err)
 
@@ -134,17 +137,39 @@ func (r *PostgresProfileRepository) FindByUserID(ctx context.Context, userID int
 	if bio.Valid {
 		profile.Bio = bio.String
 	}
+	if faculty.Valid {
+		profile.Faculty = faculty.String
+	}
+	if cvlac.Valid {
+		profile.CvlacURL = cvlac.String
+	}
+	if website.Valid {
+		profile.WebsiteURL = website.String
+	}
 	return &profile, nil
 }
 
 func (r *PostgresProfileRepository) Create(ctx context.Context, profile *Profile) error {
 	start := time.Now()
 	_, err := DB.ExecContext(ctx, `
-		INSERT INTO perfiles (id_usuario, nombre, apellido, avatar_url)
-		VALUES ($1, $2, $3, $4)`,
-		profile.UserID, profile.Name, profile.LastName, profile.AvatarURL)
+		INSERT INTO perfiles (id_usuario, nombre, apellido, avatar_url, biografia, facultad, cvlac_url, website_url)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+		profile.UserID, profile.Name, profile.LastName, profile.AvatarURL,
+		profile.Bio, profile.Faculty, profile.CvlacURL, profile.WebsiteURL)
 
 	LogDB("INSERT", "perfiles", time.Since(start).Milliseconds(), err)
+	return err
+}
+
+func (r *PostgresProfileRepository) UpdateProfile(ctx context.Context, profile *Profile) error {
+	start := time.Now()
+	_, err := DB.ExecContext(ctx, `
+		UPDATE perfiles
+		SET nombre = $1, biografia = $2, facultad = $3, cvlac_url = $4, website_url = $5
+		WHERE id_usuario = $6`,
+		profile.Name, profile.Bio, profile.Faculty, profile.CvlacURL, profile.WebsiteURL, profile.UserID)
+		
+	LogDB("UPDATE", "perfiles", time.Since(start).Milliseconds(), err)
 	return err
 }
 
@@ -191,10 +216,19 @@ func (r *PostgresVideoRepository) Create(ctx context.Context, video *Video) (int
 	start := time.Now()
 	var videoID int
 
+	typeID := videoContentTypeID
+	if video.ContentType == "imagen" {
+		typeID = imageContentTypeID
+	} else if video.ContentType == "flashcard" {
+		typeID = flashcardContentTypeID
+	} else if video.ContentType == "encuesta" {
+		typeID = pollContentTypeID
+	}
+
 	err := DB.QueryRowContext(ctx, `
 		INSERT INTO contenidos (titulo, descripcion, id_autor, id_tipo_contenido, id_estado_contenido, url_contenido, url_thumbnail)
 		VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id_contenido`,
-		video.Title, video.Description, video.AuthorID, videoContentTypeID, publishedContentStateID,
+		video.Title, video.Description, video.AuthorID, typeID, publishedContentStateID,
 		video.VideoURL, video.ThumbnailURL).Scan(&videoID)
 
 	LogDB("INSERT", "contenidos", time.Since(start).Milliseconds(), err)
@@ -211,14 +245,19 @@ func (r *PostgresVideoRepository) GetFeed(ctx context.Context, limit, offset int
 	rows, err := DB.QueryContext(ctx, `
 		SELECT 
 			c.id_contenido, c.titulo, COALESCE(c.descripcion, ''), c.url_contenido, COALESCE(c.url_thumbnail, ''),
-			(SELECT COUNT(*) FROM interacciones WHERE id_contenido = c.id_contenido AND id_tipo_interaccion = $1) as likes
+			tc.codigo as content_type,
+			c.fecha_creacion,
+			(SELECT COUNT(*) FROM interacciones WHERE id_contenido = c.id_contenido AND id_tipo_interaccion = $1) as likes,
+			COALESCE(p.nombre, 'Usuario') as author_name
 		FROM contenidos c
+		JOIN tipos_contenido tc ON c.id_tipo_contenido = tc.id_tipo_contenido
+		LEFT JOIN perfiles p ON c.id_autor = p.id_usuario
 		WHERE c.id_estado_contenido = $2
 		ORDER BY c.fecha_creacion DESC
 		LIMIT $3 OFFSET $4`,
 		likeInteractionTypeID, publishedContentStateID, limit, offset)
 
-	LogDB("SELECT", "contenidos", time.Since(start).Milliseconds(), err)
+	LogDB("SELECT", "contenidos_feed", time.Since(start).Milliseconds(), err)
 
 	if err != nil {
 		return nil, err
@@ -228,7 +267,7 @@ func (r *PostgresVideoRepository) GetFeed(ctx context.Context, limit, offset int
 	var videos []Video
 	for rows.Next() {
 		var v Video
-		if err := rows.Scan(&v.ID, &v.Title, &v.Description, &v.VideoURL, &v.ThumbnailURL, &v.Likes); err != nil {
+		if err := rows.Scan(&v.ID, &v.Title, &v.Description, &v.VideoURL, &v.ThumbnailURL, &v.ContentType, &v.CreatedAt, &v.Likes, &v.AuthorName); err != nil {
 			Logger.Warn("Error scanning feed row", "error", err)
 			continue
 		}
@@ -247,8 +286,13 @@ func (r *PostgresVideoRepository) Search(ctx context.Context, query string, limi
 	rows, err := DB.QueryContext(ctx, `
 		SELECT 
 			c.id_contenido, c.titulo, COALESCE(c.descripcion, ''), c.url_contenido, COALESCE(c.url_thumbnail, ''),
-			(SELECT COUNT(*) FROM interacciones WHERE id_contenido = c.id_contenido AND id_tipo_interaccion = $1) as likes
+			tc.codigo as content_type,
+			c.fecha_creacion,
+			(SELECT COUNT(*) FROM interacciones WHERE id_contenido = c.id_contenido AND id_tipo_interaccion = $1) as likes,
+			COALESCE(p.nombre, 'Usuario') as author_name
 		FROM contenidos c
+		JOIN tipos_contenido tc ON c.id_tipo_contenido = tc.id_tipo_contenido
+		LEFT JOIN perfiles p ON c.id_autor = p.id_usuario
 		WHERE c.id_estado_contenido = $2 
 		  AND (LOWER(c.titulo) LIKE $3 OR LOWER(c.descripcion) LIKE $3)
 		ORDER BY c.fecha_creacion DESC
@@ -265,7 +309,7 @@ func (r *PostgresVideoRepository) Search(ctx context.Context, query string, limi
 	var videos []Video
 	for rows.Next() {
 		var v Video
-		if err := rows.Scan(&v.ID, &v.Title, &v.Description, &v.VideoURL, &v.ThumbnailURL, &v.Likes); err != nil {
+		if err := rows.Scan(&v.ID, &v.Title, &v.Description, &v.VideoURL, &v.ThumbnailURL, &v.ContentType, &v.CreatedAt, &v.Likes, &v.AuthorName); err != nil {
 			Logger.Warn("Error scanning search row", "error", err)
 			continue
 		}
@@ -300,8 +344,10 @@ func (r *PostgresVideoRepository) GetByIDs(ctx context.Context, ids []int) ([]Vi
 	rows, err := DB.QueryContext(ctx, `
 		SELECT 
 			c.id_contenido, c.titulo, COALESCE(c.descripcion, ''), c.url_contenido, COALESCE(c.url_thumbnail, ''),
+			tc.codigo as content_type,
 			(SELECT COUNT(*) FROM interacciones WHERE id_contenido = c.id_contenido AND id_tipo_interaccion = $1) as likes
 		FROM contenidos c
+		JOIN tipos_contenido tc ON c.id_tipo_contenido = tc.id_tipo_contenido
 		WHERE c.id_contenido = ANY($2) AND c.id_estado_contenido = $3
 		ORDER BY array_position($2, CAST(c.id_contenido AS BIGINT))`,
 		likeInteractionTypeID, ids, publishedContentStateID)
@@ -316,7 +362,7 @@ func (r *PostgresVideoRepository) GetByIDs(ctx context.Context, ids []int) ([]Vi
 	var videos []Video
 	for rows.Next() {
 		var v Video
-		if err := rows.Scan(&v.ID, &v.Title, &v.Description, &v.VideoURL, &v.ThumbnailURL, &v.Likes); err != nil {
+		if err := rows.Scan(&v.ID, &v.Title, &v.Description, &v.VideoURL, &v.ThumbnailURL, &v.ContentType, &v.Likes); err != nil {
 			Logger.Warn("Error scanning batch row", "error", err)
 			continue
 		}
@@ -331,8 +377,10 @@ func (r *PostgresVideoRepository) GetPopular(ctx context.Context, limit int) ([]
 	rows, err := DB.QueryContext(ctx, `
 		SELECT 
 			c.id_contenido, c.titulo, COALESCE(c.descripcion, ''), c.url_contenido, COALESCE(c.url_thumbnail, ''),
+			tc.codigo as content_type,
 			(SELECT COUNT(*) FROM interacciones WHERE id_contenido = c.id_contenido AND id_tipo_interaccion = $1) as likes
 		FROM contenidos c
+		JOIN tipos_contenido tc ON c.id_tipo_contenido = tc.id_tipo_contenido
 		WHERE c.id_estado_contenido = $2
 		ORDER BY likes DESC, c.fecha_creacion DESC
 		LIMIT $3`,
@@ -348,7 +396,7 @@ func (r *PostgresVideoRepository) GetPopular(ctx context.Context, limit int) ([]
 	var videos []Video
 	for rows.Next() {
 		var v Video
-		if err := rows.Scan(&v.ID, &v.Title, &v.Description, &v.VideoURL, &v.ThumbnailURL, &v.Likes); err != nil {
+		if err := rows.Scan(&v.ID, &v.Title, &v.Description, &v.VideoURL, &v.ThumbnailURL, &v.ContentType, &v.Likes); err != nil {
 			Logger.Warn("Error scanning popular  row", "error", err)
 			continue
 		}
@@ -370,8 +418,10 @@ func (r *PostgresVideoRepository) GetSimilar(ctx context.Context, videoID int, l
 	rows, err := DB.QueryContext(ctx, `
 		SELECT 
 			c.id_contenido, c.titulo, COALESCE(c.descripcion, ''), c.url_contenido, COALESCE(c.url_thumbnail, ''),
+			tc.codigo as content_type,
 			(SELECT COUNT(*) FROM interacciones WHERE id_contenido = c.id_contenido AND id_tipo_interaccion = $1) as likes
 		FROM contenidos c
+		JOIN tipos_contenido tc ON c.id_tipo_contenido = tc.id_tipo_contenido
 		WHERE c.id_estado_contenido = $2 AND c.id_contenido != $3
 		ORDER BY CASE WHEN c.id_autor = $4 THEN 1 ELSE 2 END, likes DESC, c.fecha_creacion DESC
 		LIMIT $5`,
@@ -387,7 +437,7 @@ func (r *PostgresVideoRepository) GetSimilar(ctx context.Context, videoID int, l
 	var videos []Video
 	for rows.Next() {
 		var v Video
-		if err := rows.Scan(&v.ID, &v.Title, &v.Description, &v.VideoURL, &v.ThumbnailURL, &v.Likes); err != nil {
+		if err := rows.Scan(&v.ID, &v.Title, &v.Description, &v.VideoURL, &v.ThumbnailURL, &v.ContentType, &v.Likes); err != nil {
 			Logger.Warn("Error scanning similar row", "error", err)
 			continue
 		}
@@ -484,9 +534,10 @@ func (r *PostgresBookmarkRepository) IsBookmarked(ctx context.Context, userID, v
 
 func (r *PostgresBookmarkRepository) GetUserBookmarks(ctx context.Context, userID int, limit, offset int) ([]Video, error) {
 	rows, err := DB.QueryContext(ctx, `
-		SELECT c.id_contenido, c.titulo, COALESCE(c.descripcion, ''), c.url_contenido, COALESCE(c.url_thumbnail, '')
+		SELECT c.id_contenido, c.titulo, COALESCE(c.descripcion, ''), c.url_contenido, COALESCE(c.url_thumbnail, ''), tc.codigo as content_type
 		FROM favoritos f
 		JOIN contenidos c ON f.id_contenido = c.id_contenido
+		JOIN tipos_contenido tc ON c.id_tipo_contenido = tc.id_tipo_contenido
 		WHERE f.id_usuario = $1
 		ORDER BY f.fecha_creacion DESC
 		LIMIT $2 OFFSET $3`, userID, limit, offset)
@@ -499,7 +550,7 @@ func (r *PostgresBookmarkRepository) GetUserBookmarks(ctx context.Context, userI
 	var videos []Video
 	for rows.Next() {
 		var v Video
-		if err := rows.Scan(&v.ID, &v.Title, &v.Description, &v.VideoURL, &v.ThumbnailURL); err != nil {
+		if err := rows.Scan(&v.ID, &v.Title, &v.Description, &v.VideoURL, &v.ThumbnailURL, &v.ContentType); err != nil {
 			Logger.Warn("Error scanning bookmark row", "error", err)
 			continue
 		}

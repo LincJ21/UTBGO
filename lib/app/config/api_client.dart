@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 import 'app_config.dart';
+import '../services/global_ui_service.dart';
 
 /// Cliente HTTP centralizado que maneja autenticación, errores y timeouts.
 /// Usar esta clase en lugar de http.get/post directamente.
@@ -32,22 +33,100 @@ class ApiClient {
     return headers;
   }
 
+  bool _isRefreshing = false;
+  Future<bool>? _refreshTokenFuture;
+
+  /// Orquesta la renovación del token, evitando que múltiples peticiones lancen un refresh en paralelo.
+  Future<bool> _refreshToken() async {
+    if (_isRefreshing && _refreshTokenFuture != null) {
+      return await _refreshTokenFuture!;
+    }
+
+    _isRefreshing = true;
+    _refreshTokenFuture = _performRefreshToken();
+    final result = await _refreshTokenFuture!;
+    _isRefreshing = false;
+    _refreshTokenFuture = null;
+    return result;
+  }
+
+  /// Llama al backend (Paso 6) para intercambiar el refresh token por uno nuevo.
+  Future<bool> _performRefreshToken() async {
+    try {
+      final refreshToken = await _storage.read(key: 'refresh_token');
+      if (refreshToken == null) return false;
+
+      final response = await http.post(
+        Uri.parse(AppConfig.refreshTokenUrl),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'refresh_token': refreshToken}),
+      ).timeout(Duration(seconds: AppConfig.httpTimeoutSeconds));
+
+      if (response.statusCode == 200) {
+        final body = jsonDecode(response.body);
+        final newAccessToken = body['access_token'];
+        final newRefreshToken = body['refresh_token'];
+
+        await _storage.write(key: 'jwt_token', value: newAccessToken);
+        if (newRefreshToken != null) {
+          await _storage.write(key: 'refresh_token', value: newRefreshToken);
+        }
+        debugPrint('Token JWT renovado exitosamente');
+        return true;
+      } else {
+        debugPrint('Refresh fallback falló. Status: ${response.statusCode}, Body: ${response.body}');
+      }
+    } catch (e) {
+      debugPrint('Error al renovar token (Excepción): $e');
+    }
+
+    // Si el refresh token falló (ej. expirado o revocado en DB), forzamos logout global.
+    await GlobalUIService.forceLogout();
+    return false;
+  }
+
+  /// Wrapper para ejecutar peticiones HTTP transparentemente manejando el ciclo de Refresh Token.
+  Future<ApiResponse<T>> _executeWithRetry<T>(
+    Future<http.Response> Function() requestAction, {
+    required bool requiresAuth,
+    T Function(dynamic json)? fromJson,
+  }) async {
+    try {
+      var response = await requestAction();
+
+      // Si da 401 y requería Auth, intentamos refrescar el token
+      if (response.statusCode == 401 && requiresAuth) {
+        final refreshed = await _refreshToken();
+        if (refreshed) {
+          // Token renovado, reintentamos la petición original
+          // (requestAction creará el Future desde cero, pidiendo los headers frescos)
+          response = await requestAction();
+        }
+      }
+
+      // Procesa la respuesta (si reintentó con éxito, procesará el 200 OK)
+      return _handleResponse(response, fromJson);
+    } catch (e) {
+      return ApiResponse.error(_handleError(e));
+    }
+  }
+
   /// Realiza una request GET.
   Future<ApiResponse<T>> get<T>(
     String endpoint, {
     bool requiresAuth = false,
     T Function(dynamic json)? fromJson,
   }) async {
-    try {
-      final headers = await _getHeaders(requiresAuth: requiresAuth);
-      final response = await _client
-          .get(Uri.parse(endpoint), headers: headers)
-          .timeout(Duration(seconds: AppConfig.httpTimeoutSeconds));
-
-      return _handleResponse(response, fromJson);
-    } catch (e) {
-      return ApiResponse.error(_handleError(e));
-    }
+    return _executeWithRetry(
+      () async {
+        final headers = await _getHeaders(requiresAuth: requiresAuth);
+        return await _client
+            .get(Uri.parse(endpoint), headers: headers)
+            .timeout(Duration(seconds: AppConfig.httpTimeoutSeconds));
+      },
+      requiresAuth: requiresAuth,
+      fromJson: fromJson,
+    );
   }
 
   /// Realiza una request POST con body JSON.
@@ -57,20 +136,61 @@ class ApiClient {
     bool requiresAuth = false,
     T Function(dynamic json)? fromJson,
   }) async {
-    try {
-      final headers = await _getHeaders(requiresAuth: requiresAuth);
-      final response = await _client
-          .post(
-            Uri.parse(endpoint),
-            headers: headers,
-            body: body != null ? jsonEncode(body) : null,
-          )
-          .timeout(Duration(seconds: AppConfig.httpTimeoutSeconds));
+    return _executeWithRetry(
+      () async {
+        final headers = await _getHeaders(requiresAuth: requiresAuth);
+        return await _client
+            .post(
+              Uri.parse(endpoint),
+              headers: headers,
+              body: body != null ? jsonEncode(body) : null,
+            )
+            .timeout(Duration(seconds: AppConfig.httpTimeoutSeconds));
+      },
+      requiresAuth: requiresAuth,
+      fromJson: fromJson,
+    );
+  }
 
-      return _handleResponse(response, fromJson);
-    } catch (e) {
-      return ApiResponse.error(_handleError(e));
-    }
+  /// Realiza una request PATCH con body JSON.
+  Future<ApiResponse<T>> patch<T>(
+    String endpoint, {
+    Map<String, dynamic>? body,
+    bool requiresAuth = false,
+    T Function(dynamic json)? fromJson,
+  }) async {
+    return _executeWithRetry(
+      () async {
+        final headers = await _getHeaders(requiresAuth: requiresAuth);
+        return await _client
+            .patch(
+              Uri.parse(endpoint),
+              headers: headers,
+              body: body != null ? jsonEncode(body) : null,
+            )
+            .timeout(Duration(seconds: AppConfig.httpTimeoutSeconds));
+      },
+      requiresAuth: requiresAuth,
+      fromJson: fromJson,
+    );
+  }
+
+  /// Realiza una request DELETE.
+  Future<ApiResponse<T>> delete<T>(
+    String endpoint, {
+    bool requiresAuth = false,
+    T Function(dynamic json)? fromJson,
+  }) async {
+    return _executeWithRetry(
+      () async {
+        final headers = await _getHeaders(requiresAuth: requiresAuth);
+        return await _client
+            .delete(Uri.parse(endpoint), headers: headers)
+            .timeout(Duration(seconds: AppConfig.httpTimeoutSeconds));
+      },
+      requiresAuth: requiresAuth,
+      fromJson: fromJson,
+    );
   }
 
   /// Sube un archivo usando multipart/form-data.
@@ -82,39 +202,36 @@ class ApiClient {
     bool requiresAuth = true,
     T Function(dynamic json)? fromJson,
   }) async {
-    try {
-      // Validar archivo antes de subir
-      final validation = await _validateFile(file, fieldName);
-      if (!validation.isValid) {
-        return ApiResponse.error(validation.error!);
-      }
-
-      final request = http.MultipartRequest('POST', Uri.parse(endpoint));
-
-      // Agregar headers de autenticación
-      if (requiresAuth) {
-        final token = await _storage.read(key: 'jwt_token');
-        if (token != null) {
-          request.headers['Authorization'] = 'Bearer $token';
-        }
-      }
-
-      // Agregar campos adicionales
-      if (fields != null) {
-        request.fields.addAll(fields);
-      }
-
-      // Agregar archivo
-      request.files.add(await http.MultipartFile.fromPath(fieldName, file.path));
-
-      final streamedResponse = await request.send()
-          .timeout(Duration(seconds: AppConfig.httpTimeoutSeconds * 2)); // Más tiempo para uploads
-      final response = await http.Response.fromStream(streamedResponse);
-
-      return _handleResponse(response, fromJson);
-    } catch (e) {
-      return ApiResponse.error(_handleError(e));
+    // La validación de archivo se hace fuera del logica de reintento para no repetirla innecesariamente
+    final validation = await _validateFile(file, fieldName);
+    if (!validation.isValid) {
+      return ApiResponse.error(validation.error!);
     }
+
+    return _executeWithRetry(
+      () async {
+        final request = http.MultipartRequest('POST', Uri.parse(endpoint));
+
+        if (requiresAuth) {
+          final token = await _storage.read(key: 'jwt_token');
+          if (token != null) {
+            request.headers['Authorization'] = 'Bearer $token';
+          }
+        }
+
+        if (fields != null) {
+          request.fields.addAll(fields);
+        }
+
+        request.files.add(await http.MultipartFile.fromPath(fieldName, file.path));
+
+        final streamedResponse = await request.send()
+            .timeout(Duration(seconds: AppConfig.httpTimeoutSeconds * 2));
+        return await http.Response.fromStream(streamedResponse);
+      },
+      requiresAuth: requiresAuth,
+      fromJson: fromJson,
+    );
   }
 
   /// Valida un archivo antes de subirlo.
@@ -174,41 +291,56 @@ class ApiClient {
       errorMessage = 'Error del servidor (código: $statusCode)';
     }
 
+    ApiError apiError;
     switch (statusCode) {
       case 400:
-        return ApiResponse.error(ApiError.badRequest(errorMessage));
+        apiError = ApiError.badRequest(errorMessage);
+        break;
       case 401:
-        return ApiResponse.error(ApiError.unauthorized(errorMessage));
+        apiError = ApiError.unauthorized('Sesión expirada. Por favor, inicia sesión de nuevo.');
+        // TODO: Mover al log in (Paso 6)
+        break;
       case 403:
-        return ApiResponse.error(ApiError.forbidden(errorMessage));
+        apiError = ApiError.forbidden(errorMessage);
+        break;
       case 404:
-        return ApiResponse.error(ApiError.notFound(errorMessage));
+        apiError = ApiError.notFound(errorMessage);
+        break;
       case 429:
-        return ApiResponse.error(ApiError.tooManyRequests(errorMessage));
+        apiError = ApiError.tooManyRequests(errorMessage);
+        break;
       case 500:
       case 502:
       case 503:
-        return ApiResponse.error(ApiError.serverError(errorMessage));
+        apiError = ApiError.serverError('El servidor está temporalmente fuera de servicio.');
+        break;
       default:
-        return ApiResponse.error(ApiError.unknown(errorMessage));
+        apiError = ApiError.unknown(errorMessage);
     }
+
+    // Mostrar el error globalmente
+    GlobalUIService.showError(apiError.message);
+    return ApiResponse.error(apiError);
   }
 
-  /// Convierte excepciones en errores amigables.
+  /// Convierte excepciones en errores amigables y los muestra.
   ApiError _handleError(dynamic error) {
     debugPrint('ApiClient error: $error');
 
+    ApiError apiError;
     if (error is SocketException) {
-      return ApiError.network('Sin conexión a internet');
-    }
-    if (error is http.ClientException) {
-      return ApiError.network('Error de conexión con el servidor');
-    }
-    if (error.toString().contains('TimeoutException')) {
-      return ApiError.timeout('La conexión tardó demasiado. Intenta de nuevo.');
+      apiError = ApiError.network('Sin conexión a internet. Verifica tu red.');
+    } else if (error is http.ClientException) {
+      apiError = ApiError.network('Error de conexión con el servidor.');
+    } else if (error.toString().contains('TimeoutException')) {
+      apiError = ApiError.timeout('La petición tardó demasiado. Intenta de nuevo.');
+    } else {
+      apiError = ApiError.unknown('Error inesperado de red.');
     }
 
-    return ApiError.unknown('Error inesperado: ${error.toString()}');
+    // Mostrar el error globalmente
+    GlobalUIService.showError(apiError.message);
+    return apiError;
   }
 }
 

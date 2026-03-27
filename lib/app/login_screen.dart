@@ -7,7 +7,8 @@ import 'package:aad_oauth/model/config.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
 import 'config/app_config.dart';
-import 'onboarding_interests_screen.dart'; // Importación añadida
+import 'config/api_client.dart'; // Importación añadida para consultar el perfil
+import 'onboarding_interests_screen.dart';
 
 /// [LoginScreen] permite iniciar sesión con email/password o con Google.
 class LoginScreen extends StatefulWidget {
@@ -60,7 +61,7 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  /// Guarda los tokens JWT y notifica éxito.
+  /// Guarda los tokens JWT, verifica el perfil y decide si de ir al Onboarding o al Feed principal.
   Future<void> _saveTokensAndNotify(Map<String, dynamic> responseBody) async {
     final String accessToken = responseBody['access_token'];
     debugPrint('Token JWT recibido (longitud: ${accessToken.length})');
@@ -73,9 +74,45 @@ class _LoginScreenState extends State<LoginScreen> {
     }
 
     if (!mounted) return;
-    
-    // Cambiamos al estado de Onboarding internally
-    setState(() => _showOnboarding = true);
+
+    setState(() => _isLoading = true);
+    try {
+      // Verificar si el usuario ya escogió sus intereses (Cold Start)
+      final apiClient = ApiClient();
+      final profileResponse = await apiClient.get(
+        '${AppConfig.backendBaseUrl}/api/v1/profile/me',
+        requiresAuth: true,
+      );
+
+      if (!mounted) return;
+
+      bool needsOnboarding = true;
+      if (profileResponse.isSuccess && profileResponse.data != null) {
+        final data = profileResponse.data as Map<String, dynamic>;
+        final interests = data['interests'] as List<dynamic>?;
+        if (interests != null && interests.isNotEmpty) {
+          needsOnboarding = false; // Ya tiene intereses, omitir Onboarding
+        }
+      }
+
+      if (needsOnboarding) {
+        setState(() {
+          _isLoading = false;
+          _showOnboarding = true;
+        });
+      } else {
+        setState(() => _isLoading = false);
+        widget.onLoginSuccess(); // Lo manda directo al Feed (Home)
+      }
+    } catch (e) {
+      debugPrint('Error verificando perfil: $e');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _showOnboarding = true; // Ante la duda, pedir intereses
+        });
+      }
+    }
   }
 
   /// Login con email y contraseña.
@@ -194,18 +231,16 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        final token = data['access_token'];
+        await _saveTokensAndNotify(data); // Usa el método seguro que extrae ambos tokens
 
-        // Guardar token
-        await _storage.write(key: 'jwt_token', value: token);
-
+        if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('Bienvenido, ${firebaseUser.displayName}!'),
               backgroundColor: Colors.green,
             ),
           );
-          setState(() => _showOnboarding = true);
+        }
       } else {
         throw Exception('Error en el servidor: ${response.body}');
       }

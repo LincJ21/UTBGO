@@ -386,8 +386,20 @@ func handleUploadVideoV2(c *gin.Context) {
 		return
 	}
 
+	contentType := c.PostForm("content_type")
+	if contentType == "" {
+		contentType = "video"
+	}
+
 	validator := NewFileValidator()
-	if apiErr := validator.ValidateVideo(fileHeader); apiErr != nil {
+	var apiErr *APIError
+	if contentType == "imagen" {
+		apiErr = validator.ValidateImage(fileHeader)
+	} else {
+		apiErr = validator.ValidateVideo(fileHeader)
+	}
+
+	if apiErr != nil {
 		RespondError(c, apiErr)
 		return
 	}
@@ -403,11 +415,10 @@ func handleUploadVideoV2(c *gin.Context) {
 	// Subir a Azure
 	result, err := Storage.UploadVideo(c.Request.Context(), file, "videos")
 	if err != nil {
-		Logger.Error("Error subiendo video a Azure", "error", err, "user_id", userID)
-		RespondError(c, ErrStorage("Error al subir el video"))
+		Logger.Error("Error subiendo contenido a Azure", "error", err, "user_id", userID)
+		RespondError(c, ErrStorage("Error al subir el archivo"))
 		return
 	}
-
 	// Guardar en base de datos
 	video := &Video{
 		Title:        req.Title,
@@ -415,6 +426,7 @@ func handleUploadVideoV2(c *gin.Context) {
 		AuthorID:     userID,
 		VideoURL:     result.URL,
 		ThumbnailURL: result.URL, // Por ahora usar la misma URL
+		ContentType:  contentType,
 	}
 
 	videoID, err := Repos.Videos.Create(c.Request.Context(), video)
@@ -489,9 +501,30 @@ func handleToggleLikeV2(c *gin.Context) {
 		eventType = "unlike"
 	}
 	SendTrackingEvent(context.Background(), c.GetHeader("Authorization"), TrackingEvent{
+		UserID:    userID,
 		ContentID: videoID,
 		EventType: eventType,
 	})
+
+	// --- Generar notificación al dueño del video ---
+	if isLiked {
+		go func() {
+			ctx := context.Background()
+			video, err := Repos.Videos.FindByID(ctx, videoID)
+			if err != nil || video == nil || video.AuthorID == userID {
+				return // No notificar errores ni self-likes
+			}
+			actor, _ := Repos.Users.FindByID(ctx, userID)
+			actorName := "Alguien"
+			if actor != nil {
+				actorName = actor.Username
+			}
+			CreateNotificationAsync(video.AuthorID, "like",
+				"Nuevo like",
+				" le dio like a tu video \""+video.Title+"\"",
+				actorName, videoID)
+		}()
+	}
 }
 
 // handleToggleBookmarkV2 maneja bookmarks usando repositorios.
@@ -526,6 +559,7 @@ func handleToggleBookmarkV2(c *gin.Context) {
 		eventType = "unbookmark"
 	}
 	SendTrackingEvent(context.Background(), c.GetHeader("Authorization"), TrackingEvent{
+		UserID:    userID,
 		ContentID: videoID,
 		EventType: eventType,
 	})
@@ -627,6 +661,31 @@ func handleCreateCommentV2(c *gin.Context) {
 		Cache.InvalidateComments(c.Request.Context(), videoID)
 	}
 
+	// --- Integración Tracking Service ---
+	SendTrackingEvent(context.Background(), c.GetHeader("Authorization"), TrackingEvent{
+		UserID:    userID,
+		ContentID: videoID,
+		EventType: "comment",
+	})
+
+	// --- Generar notificación al dueño del video ---
+	go func() {
+		ctx := context.Background()
+		video, err := Repos.Videos.FindByID(ctx, videoID)
+		if err != nil || video == nil || video.AuthorID == userID {
+			return // No notificar errores ni auto-comentarios
+		}
+		actor, _ := Repos.Users.FindByID(ctx, userID)
+		actorName := "Alguien"
+		if actor != nil {
+			actorName = actor.Username
+		}
+		CreateNotificationAsync(video.AuthorID, "comment",
+			"Nuevo comentario",
+			" comentó en tu video \""+video.Title+"\"",
+			actorName, videoID)
+	}()
+
 	Logger.Info("Comentario creado", "comment_id", commentID, "user_id", userID, "video_id", videoID)
 	RespondCreated(c, gin.H{
 		"id":      commentID,
@@ -678,8 +737,11 @@ func handleGetFeedV2(c *gin.Context) {
 			"id":            strconv.Itoa(v.ID),
 			"title":         v.Title,
 			"description":   v.Description,
+			"author_name":   v.AuthorName,
 			"video_url":     v.VideoURL,
 			"thumbnail_url": v.ThumbnailURL,
+			"content_type":  v.ContentType,
+			"created_at":    v.CreatedAt.Format(time.RFC3339),
 			"likes":         v.Likes,
 			"comments":      0,
 			"is_liked":      false,
@@ -696,6 +758,18 @@ func handleGetFeedV2(c *gin.Context) {
 	// Guardar en caché (solo feeds públicos sin userID para evitar datos cruzados)
 	if Cache != nil && userID == nil {
 		Cache.SetFeed(c.Request.Context(), page, result)
+	}
+
+	// --- Integración Tracking Service ---
+	// Emitir evento 'view' por cada video cargado en el feed (solo si autenticado)
+	if userID != nil {
+		for _, v := range videos {
+			SendTrackingEvent(context.Background(), c.GetHeader("Authorization"), TrackingEvent{
+				UserID:    *userID,
+				ContentID: v.ID,
+				EventType: "view",
+			})
+		}
 	}
 
 	RespondSuccess(c, result)
@@ -736,8 +810,11 @@ func handleSearchV2(c *gin.Context) {
 			"id":            strconv.Itoa(v.ID),
 			"title":         v.Title,
 			"description":   v.Description,
+			"author_name":   v.AuthorName,
 			"video_url":     v.VideoURL,
 			"thumbnail_url": v.ThumbnailURL,
+			"content_type":  v.ContentType,
+			"created_at":    v.CreatedAt.Format(time.RFC3339),
 			"likes":         v.Likes,
 		})
 	}
@@ -753,6 +830,17 @@ func handleSearchV2(c *gin.Context) {
 		Cache.SetSearch(c.Request.Context(), query, result)
 	}
 
+	// --- Integración Tracking Service ---
+	uid := getUserIDFromContext(c)
+	if uid > 0 {
+		SendTrackingEvent(context.Background(), c.GetHeader("Authorization"), TrackingEvent{
+			UserID:    uid,
+			ContentID: 0,
+			EventType: "search",
+			Metadata:  map[string]any{"query": query},
+		})
+	}
+
 	Logger.Info("Búsqueda realizada", "query", query, "results", len(response))
 	RespondSuccess(c, result)
 }
@@ -766,4 +854,46 @@ func getUserIDFromContext(c *gin.Context) int {
 		return 0
 	}
 	return int(userIDVal.(float64))
+}
+
+// UpdateInterestsRequest define el payload para actualizar los intereses del usuario.
+type UpdateInterestsRequest struct {
+	Interests []string `json:"interests" binding:"required"`
+}
+
+// handleUpdateInterestsV2 guarda los intereses del usuario en la columna "intereses" de la tabla perfiles.
+func handleUpdateInterestsV2(c *gin.Context) {
+	var req UpdateInterestsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		RespondError(c, ErrInvalidInput("payload", "El formato JSON es inválido o falta el campo 'interests'"))
+		return
+	}
+
+	userID := getUserIDFromContext(c)
+	if userID == 0 {
+		RespondError(c, ErrUnauthorized().WithDetails("Usuario no autenticado"))
+		return
+	}
+
+	// Evitar arreglos nulos en BD
+	if req.Interests == nil {
+		req.Interests = []string{}
+	}
+
+	// Formatear el slice de strings de Go a literal de arreglo de PostgreSQL: {"a", "b"}
+	// pgx soporta pq.Array pero como usamos pgxpool y raw SQL, la forma más limpia
+	// es construir el literal string "{math, logic}" para TEXT[]
+	arrayLiteral := "{" + strings.Join(req.Interests, ",") + "}"
+
+	query := `UPDATE perfiles SET intereses = $1 WHERE id_usuario = $2`
+	_, err := DB.ExecContext(c.Request.Context(), query, arrayLiteral, userID)
+
+	if err != nil {
+		Logger.Error("No se pudieron actualizar los intereses", "error", err, "user_id", userID)
+		RespondError(c, ErrDatabase("Error al guardar los intereses en la base de datos"))
+		return
+	}
+
+	Logger.Info("Intereses actualizados exitosamente", "user_id", userID, "intereses", req.Interests)
+	RespondSuccess(c, gin.H{"message": "Intereses actualizados correctamente", "interests": req.Interests})
 }

@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'privacy_policy_screen.dart';
+import 'terms_of_service_screen.dart';
 
 // ─────────────────────────────────────────────────────────────
 //  PANTALLA DE CONFIGURACIÓN
@@ -101,21 +103,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
               icon: Icons.lock,
               iconColor: const Color(0xFF546E7A),
               title: 'Privacidad',
-              onTap: () => _showComingSoon(context, 'Privacidad'),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const PrivacyPolicyScreen()),
+              ),
             ),
             _buildDivider(),
             _buildSettingsItem(
               icon: Icons.description,
               iconColor: const Color(0xFF546E7A),
               title: 'Términos y condiciones',
-              onTap: () => _showComingSoon(context, 'Términos y condiciones'),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const TermsOfServiceScreen()),
+              ),
             ),
             _buildDivider(),
             _buildSettingsItem(
               icon: Icons.policy,
               iconColor: const Color(0xFF546E7A),
               title: 'Política de datos',
-              onTap: () => _showComingSoon(context, 'Política de datos'),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const PrivacyPolicyScreen()),
+              ),
             ),
           ]),
 

@@ -70,12 +70,13 @@ class AppConfig {
 
   // --- Endpoints de la API ---
 
-  static String get videosEndpoint => '$apiBaseUrl/videos';
+  static String get videosEndpoint => '$apiBaseUrl/v1/videos';
   static String get videosFeedEndpoint => '$videosEndpoint/feed';
   static String get videosSearchEndpoint => '$videosEndpoint/search';
   static String get videosUploadEndpoint => '$videosEndpoint/upload';
 
-  static String get profileEndpoint => '$apiBaseUrl/profile';
+  // El endpoint de perfil usa la API v1.
+  static String get profileEndpoint => '$backendBaseUrl/api/v1/profile';
   static String get profileMeEndpoint => '$profileEndpoint/me';
   static String get profileAvatarEndpoint => '$profileEndpoint/avatar';
 
@@ -89,6 +90,28 @@ class AppConfig {
   /// Genera URL para comentarios de un video.
   static String videoCommentsUrl(String videoId) =>
       '$videosEndpoint/$videoId/comments';
+
+  // --- Endpoints de Recomendaciones ---
+
+  /// URL base para recomendaciones.
+  static String get recommendBaseUrl => '$backendBaseUrl/api/v1/recommend';
+
+  /// Endpoint para videos populares/trending.
+  static String get recommendPopularEndpoint => '$recommendBaseUrl/popular';
+
+  // --- Endpoints de Flashcards ---
+
+  /// URL base para flashcards.
+  static String get flashcardsEndpoint => '$backendBaseUrl/api/v1/flashcards';
+
+  // --- Endpoints de Encuestas ---
+
+  /// URL base para encuestas.
+  static String get pollsEndpoint => '$backendBaseUrl/api/v1/polls';
+
+  /// Genera URL para votar en una encuesta.
+  static String pollVoteUrl(String pollContentId) =>
+      '$pollsEndpoint/$pollContentId/vote';
 
   // --- Configuración de la App ---
 

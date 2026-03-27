@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -157,7 +158,7 @@ class _UploadVideoScreenState extends State<UploadVideoScreen> {
 
         final response = await request.send();
 
-        if (response.statusCode == 200) {
+        if (response.statusCode >= 200 && response.statusCode < 300) {
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('¡Publicación subida con éxito!')),
@@ -167,14 +168,109 @@ class _UploadVideoScreenState extends State<UploadVideoScreen> {
           final respStr = await response.stream.bytesToString();
           throw Exception('Fallo: ${response.statusCode} - $respStr');
         }
-      } else {
-        // Mock upload para los otros tipos (Flashcard, Encuesta, Imagen)
-        await Future.delayed(const Duration(seconds: 2));
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('¡${_contentTypes[_selectedContentType].label} subida con éxito! (Simulado)')),
+      } else if (_selectedContentType == 2) {
+        // ── Flashcard: POST JSON al backend ──
+        final body = jsonEncode({
+          'title': _descriptionController.text.isNotEmpty
+              ? _descriptionController.text
+              : 'Flashcard',
+          'description': _descriptionController.text,
+          'front_text': _flashcardFrontController.text.trim(),
+          'back_text': _flashcardBackController.text.trim(),
+        });
+
+        final response = await http.post(
+          Uri.parse(AppConfig.flashcardsEndpoint),
+          headers: {
+            'Authorization': 'Bearer $token',
+            'Content-Type': 'application/json',
+          },
+          body: body,
         );
-        Navigator.of(context).pop();
+
+        if (response.statusCode >= 200 && response.statusCode < 300) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('¡Flashcard creada con éxito!')),
+          );
+          Navigator.of(context).pop();
+        } else {
+          throw Exception('Error ${response.statusCode}: ${response.body}');
+        }
+      } else if (_selectedContentType == 3) {
+        // ── Encuesta: POST JSON al backend ──
+        final options = _pollOptionControllers
+            .map((c) => c.text.trim())
+            .where((t) => t.isNotEmpty)
+            .toList();
+
+        if (options.length < 2) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Se necesitan al menos 2 opciones.')),
+          );
+          setState(() => _isUploading = false);
+          return;
+        }
+
+        final body = jsonEncode({
+          'title': _pollQuestionController.text.trim(),
+          'description': _descriptionController.text,
+          'question': _pollQuestionController.text.trim(),
+          'options': options,
+        });
+
+        final response = await http.post(
+          Uri.parse(AppConfig.pollsEndpoint),
+          headers: {
+            'Authorization': 'Bearer $token',
+            'Content-Type': 'application/json',
+          },
+          body: body,
+        );
+
+        if (response.statusCode >= 200 && response.statusCode < 300) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('¡Encuesta creada con éxito!')),
+          );
+          Navigator.of(context).pop();
+        } else {
+          throw Exception('Error ${response.statusCode}: ${response.body}');
+        }
+      } else if (_selectedContentType == 1) {
+        // ── Imagen: sube como contenido multimedia ──
+        final file = File(_selectedFile!.path);
+        final fileSize = await file.length();
+        final maxSize = AppConfig.maxVideoSizeMB * 1024 * 1024;
+
+        if (fileSize > maxSize) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Imagen muy grande. Máximo: ${AppConfig.maxVideoSizeMB}MB')),
+          );
+          setState(() => _isUploading = false);
+          return;
+        }
+
+        var request = http.MultipartRequest('POST', Uri.parse(AppConfig.videosUploadEndpoint));
+        request.headers['Authorization'] = 'Bearer $token';
+        request.fields['title'] = _descriptionController.text.isNotEmpty ? 'Imagen: ${_descriptionController.text}' : 'Imagen';
+        request.fields['description'] = _descriptionController.text;
+        request.fields['content_type'] = 'imagen';
+        request.files.add(await http.MultipartFile.fromPath('video', _selectedFile!.path));
+
+        final response = await request.send();
+
+        if (response.statusCode >= 200 && response.statusCode < 300) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('¡Imagen subida con éxito!')),
+          );
+          Navigator.of(context).pop();
+        } else {
+          final respStr = await response.stream.bytesToString();
+          throw Exception('Fallo: ${response.statusCode} - $respStr');
+        }
       }
 
     } catch (e) {

@@ -6,10 +6,12 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'upload_video_screen.dart';
 import 'package:image_picker/image_picker.dart';
 import 'config/app_config.dart';
+import 'config/api_client.dart';
+import 'services/global_ui_service.dart';
 import 'settings_screen.dart';
 import 'edit_profile_screen.dart';
-import 'notifications_screen.dart';
-
+import 'admin_panel_screen.dart';
+import 'package:url_launcher/url_launcher.dart';
 /// [ProfileScreen] muestra el perfil del usuario con tabs de Stats y Publicaciones.
 class ProfileScreen extends StatefulWidget {
   final VoidCallback onLogout;
@@ -27,6 +29,8 @@ class _ProfileScreenState extends State<ProfileScreen>
   late TabController _tabController;
   int _selectedPublicationTab = 0;
 
+  final _apiClient = ApiClient();
+
   @override
   void initState() {
     super.initState();
@@ -41,25 +45,20 @@ class _ProfileScreenState extends State<ProfileScreen>
   }
 
   Future<ProfileModel> _fetchProfile() async {
-    final token = await _storage.read(key: 'jwt_token');
-    if (token == null) {
-      throw Exception('No hay token de autenticación');
-    }
+    final response = await _apiClient.get<ProfileModel>(
+      AppConfig.profileMeEndpoint,
+      requiresAuth: true,
+      fromJson: (json) => ProfileModel.fromJson(json),
+    );
 
-    try {
-      final response = await http
-          .get(
-            Uri.parse(AppConfig.profileMeEndpoint),
-            headers: {'Authorization': 'Bearer $token'},
-          )
-          .timeout(Duration(seconds: AppConfig.httpTimeoutSeconds));
-      if (response.statusCode == 200) {
-        return ProfileModel.fromJson(json.decode(response.body));
-      } else {
-        throw Exception('Fallo al cargar el perfil: ${response.statusCode}');
+    if (response.isSuccess && response.data != null) {
+      return response.data!;
+    } else {
+      final errorMsg = response.error?.message ?? 'Error desconocido';
+      if (mounted) {
+        GlobalUIService.showError('Perfil falló: $errorMsg');
       }
-    } catch (e) {
-      debugPrint('Error fetching profile: $e. Loading local fallback.');
+      debugPrint('Error fetching profile: $errorMsg. Loading local fallback.');
       return ProfileModel(
         id: 'local-1',
         username: 'Carlos David',
@@ -103,6 +102,15 @@ class _ProfileScreenState extends State<ProfileScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Error al subir la imagen.')));
+      }
+    }
+  }
+
+  Future<void> _launchURL(String urlString) async {
+    final Uri url = Uri.parse(urlString.startsWith('http') ? urlString : 'https://$urlString');
+    if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
+      if (mounted) {
+        GlobalUIService.showError('No se pudo abrir el enlace.');
       }
     }
   }
@@ -185,19 +193,18 @@ class _ProfileScreenState extends State<ProfileScreen>
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  IconButton(
-                                    icon: const Icon(Icons.notifications_none, color: Colors.white, size: 28),
-                                    onPressed: () {
-                                      Navigator.of(context).push(
-                                        MaterialPageRoute(builder: (_) => const NotificationsScreen()),
-                                      );
-                                    },
-                                  ),
+
                                   PopupMenuButton<String>(
                                     icon: const Icon(Icons.menu,
                                         color: Colors.white, size: 28),
                                     onSelected: (value) {
-                                      if (value == 'settings') {
+                                      if (value == 'admin_panel') {
+                                        Navigator.of(context).push(
+                                          MaterialPageRoute(
+                                            builder: (_) => const AdminPanelScreen(),
+                                          ),
+                                        );
+                                      } else if (value == 'settings') {
                                         Navigator.of(context).push(
                                           MaterialPageRoute(
                                             builder: (_) => SettingsScreen(onLogout: widget.onLogout),
@@ -208,6 +215,17 @@ class _ProfileScreenState extends State<ProfileScreen>
                                       }
                                     },
                                     itemBuilder: (context) => [
+                                      if (profile.role == 'admin' || profile.role == 'moderador')
+                                        const PopupMenuItem(
+                                          value: 'admin_panel',
+                                          child: Row(
+                                            children: [
+                                              Icon(Icons.admin_panel_settings, color: Colors.blueAccent),
+                                              SizedBox(width: 8),
+                                              Text('Panel Admin', style: TextStyle(fontWeight: FontWeight.bold)),
+                                            ],
+                                          ),
+                                        ),
                                       const PopupMenuItem(
                                         value: 'settings',
                                         child: Row(
@@ -272,12 +290,26 @@ class _ProfileScreenState extends State<ProfileScreen>
                     child: Padding(
                       padding: const EdgeInsets.only(right: 16, top: 4),
                       child: OutlinedButton(
-                        onPressed: () {
-                          Navigator.of(context).push(
+                        onPressed: () async {
+                          final didSave = await Navigator.of(context).push<bool>(
                             MaterialPageRoute(
-                              builder: (_) => const EditProfileScreen(),
+                              builder: (_) => EditProfileScreen(
+                                initialData: ProfileData(
+                                  name: profile.username, // mapping username -> name because ProfileModel groups them
+                                  username: '', 
+                                  bio: profile.bio ?? '',
+                                  faculty: profile.faculty ?? '',
+                                  role: profile.role,
+                                  cvlacUrl: profile.cvlacUrl,
+                                  websiteUrl: profile.websiteUrl,
+                                  avatarUrl: profile.avatarUrl.isNotEmpty ? profile.avatarUrl : null,
+                                ),
+                              ),
                             ),
                           );
+                          if (didSave == true) {
+                            setState(() => _profileFuture = _fetchProfile());
+                          }
                         },
                         style: OutlinedButton.styleFrom(
                           side: const BorderSide(color: Color(0xFF003399), width: 1.5),
@@ -302,20 +334,90 @@ class _ProfileScreenState extends State<ProfileScreen>
                         Text(
                           profile.username,
                           style: const TextStyle(
-                              fontSize: 22, fontWeight: FontWeight.bold),
+                            fontSize: 26, 
+                            fontWeight: FontWeight.w800, 
+                            letterSpacing: -0.5, 
+                            color: Color(0xFF1E293B),
+                          ),
                         ),
-                        const SizedBox(height: 6),
+                        if (profile.faculty != null && profile.faculty!.isNotEmpty) ...[
+                          const SizedBox(height: 2),
+                          Row(
+                            children: [
+                              const Icon(Icons.school, size: 16, color: Color(0xFF64748B)),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  profile.faculty!,
+                                  style: const TextStyle(fontSize: 14, color: Color(0xFF64748B), fontWeight: FontWeight.w500),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                        const SizedBox(height: 12),
                         Text(
-                          profile.role == 'profesor'
-                              ? 'Profesor en pregrado como en posgrados en las áreas de Redes y Comunicación de Datos, Sistemas Operativos, Ingeniería de Software y Educación Apoyada en TIC.'
-                              : profile.role == 'admin'
-                                  ? 'Administrador del sistema UTBGO'
-                                  : profile.role == 'aspirante'
-                                      ? 'Aspirante'
-                                      : 'Estudiante de la UTB',
+                          (profile.bio != null && profile.bio!.isNotEmpty)
+                              ? profile.bio!
+                              : (profile.role == 'profesor'
+                                  ? 'Profesor de la Universidad Tecnológica de Bolívar.'
+                                  : profile.role == 'admin'
+                                      ? 'Administrador del sistema UTBGO'
+                                      : 'Estudiante de la UTB'),
                           style: const TextStyle(
-                              fontSize: 13, color: Colors.black87, height: 1.4),
+                              fontSize: 14, color: Color(0xFF334155), height: 1.5),
                         ),
+                        if ((profile.cvlacUrl != null && profile.cvlacUrl!.isNotEmpty) || 
+                            (profile.websiteUrl != null && profile.websiteUrl!.isNotEmpty)) ...[
+                          const SizedBox(height: 16),
+                          Row(
+                            children: [
+                              if (profile.cvlacUrl != null && profile.cvlacUrl!.isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(right: 10),
+                                  child: Material(
+                                    color: Colors.red.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(20),
+                                    child: InkWell(
+                                      onTap: () => _launchURL(profile.cvlacUrl!),
+                                      borderRadius: BorderRadius.circular(20),
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(Icons.school, size: 14, color: Colors.red[400]),
+                                            const SizedBox(width: 6),
+                                            const Text('CvLAC', style: TextStyle(fontSize: 13, color: Colors.red, fontWeight: FontWeight.w600)),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              if (profile.websiteUrl != null && profile.websiteUrl!.isNotEmpty)
+                                Material(
+                                  color: Colors.blue.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(20),
+                                  child: InkWell(
+                                    onTap: () => _launchURL(profile.websiteUrl!),
+                                    borderRadius: BorderRadius.circular(20),
+                                    child: const Padding(
+                                      padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(Icons.language, size: 14, color: Colors.blue),
+                                          SizedBox(width: 6),
+                                          Text('Website', style: TextStyle(fontSize: 13, color: Colors.blue, fontWeight: FontWeight.w600)),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ],
                       ],
                     ),
                   ),

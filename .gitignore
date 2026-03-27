@@ -166,6 +166,9 @@ db.py
 # Directorios de debug/testing temporal
 tmp_debug/
 tmp/
+tmp_api
+android/shas.txt
+android/shas_exact.txt
 
 # ==============================================================================
 # MEJORAS PARA PYTHON (Microservicios)
@@ -179,3 +182,15 @@ tmp/
 *.pyo
 *.pyd
 .python-version
+
+# ==============================================================================
+# DOCUMENTOS INTERNOS
+# ==============================================================================
+AUDITORIA_PRODUCCION.md
+avanceactual.md
+faltante.md
+SAD.md
+
+# Scripts de prueba local
+test_upstash.py
+verify_e2e.py

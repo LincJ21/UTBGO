@@ -1,4 +1,3 @@
-import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -7,8 +6,11 @@ import 'package:video_player/video_player.dart';
 import 'video_model.dart';
 import 'search_results_screen.dart';
 import 'comments_bottom_sheet.dart';
+import 'description_bottom_sheet.dart';
 import 'notifications_screen.dart';
 import 'config/app_config.dart';
+import 'config/api_client.dart';
+import 'package:share_plus/share_plus.dart';
 
 class VideoPlayerWidget extends StatefulWidget {
   final VideoModel video;
@@ -25,8 +27,9 @@ class VideoPlayerWidget extends StatefulWidget {
 }
 
 class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
-  late VideoPlayerController _controller;
-  final _storage = const FlutterSecureStorage();
+  VideoPlayerController? _controller;
+  late bool _isImage;
+  final _apiClient = ApiClient();
   final TextEditingController _searchController = TextEditingController();
   bool _isSearching = false;
   bool _showControls = true;
@@ -40,20 +43,16 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
       widget.video.isLiked ? widget.video.likes++ : widget.video.likes--;
     });
 
-    try {
-      final token = await _storage.read(key: 'jwt_token');
-      if (token == null) return;
-      await http.post(
-        Uri.parse(AppConfig.videoLikeUrl(widget.video.id)),
-        headers: {'Authorization': 'Bearer $token'},
-      );
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          widget.video.isLiked = wasLiked;
-          widget.video.likes = prevLikes;
-        });
-      }
+    final response = await _apiClient.post(
+      AppConfig.videoLikeUrl(widget.video.id),
+      requiresAuth: true,
+    );
+
+    if (!response.isSuccess && mounted) {
+      setState(() {
+        widget.video.isLiked = wasLiked;
+        widget.video.likes = prevLikes;
+      });
     }
   }
 
@@ -61,85 +60,65 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
     final wasBookmarked = widget.video.isBookmarked;
     setState(() => widget.video.isBookmarked = !widget.video.isBookmarked);
 
-    try {
-      final token = await _storage.read(key: 'jwt_token');
-      if (token == null) return;
-      await http.post(
-        Uri.parse(AppConfig.videoBookmarkUrl(widget.video.id)),
-        headers: {'Authorization': 'Bearer $token'},
-      );
-    } catch (e) {
-      if (mounted) setState(() => widget.video.isBookmarked = wasBookmarked);
+    final response = await _apiClient.post(
+      AppConfig.videoBookmarkUrl(widget.video.id),
+      requiresAuth: true,
+    );
+
+    if (!response.isSuccess && mounted) {
+      setState(() => widget.video.isBookmarked = wasBookmarked);
     }
   }
 
   void _shareVideo() {
-    ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Función de compartir no implementada')));
+    final title = widget.video.title.isNotEmpty ? widget.video.title : 'este video';
+    final shareText = '¡Mira $title en UTBGO! \n\nhttps://utbgo.app/video/${widget.video.id}';
+    Share.share(shareText);
   }
 
-  Future<void> _performSearch() async {
-    final query = _searchController.text;
+  void _performSearch() {
+    final query = _searchController.text.trim();
     if (query.isEmpty) return;
+    
     FocusScope.of(context).unfocus();
-
-    final Uri uri = Uri.parse(AppConfig.videosSearchEndpoint)
-        .replace(queryParameters: {'q': query});
-
-    try {
-      final response = await http
-          .get(uri)
-          .timeout(Duration(seconds: AppConfig.httpTimeoutSeconds));
-
-      if (response.statusCode == 200) {
-        final Map<String, dynamic> data = json.decode(response.body);
-        final List<dynamic> videoJson = (data['videos'] as List<dynamic>?) ?? [];
-        final searchResults =
-            videoJson.map((json) => VideoModel.fromBackendJson(json)).toList();
-
-        if (!mounted) return;
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (context) => SearchResultsScreen(
-                searchResults: searchResults, query: query),
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Error al realizar la búsqueda.')));
-      }
-    }
     setState(() => _isSearching = false);
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => SearchResultsScreen(query: query),
+      ),
+    );
   }
 
   @override
   void initState() {
     super.initState();
-    _controller =
-        VideoPlayerController.networkUrl(Uri.parse(widget.video.videoUrl));
-    _controller.initialize().then((_) {
-      setState(() {});
-      _controller.play();
-      _controller.setLooping(true);
-    });
+    _isImage = widget.video.contentType == 'imagen';
+    if (!_isImage) {
+      _controller =
+          VideoPlayerController.networkUrl(Uri.parse(widget.video.videoUrl));
+      _controller!.initialize().then((_) {
+        setState(() {});
+        _controller!.play();
+        _controller!.setLooping(true);
+      });
+    }
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _controller?.dispose();
     _searchController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return _controller.value.isInitialized
+    return (_isImage || (_controller?.value.isInitialized ?? false))
         ? Stack(
             alignment: Alignment.center,
             children: [
-              // Video a pantalla completa
+              // Reproductor o Imagen a pantalla completa
               GestureDetector(
                 onTap: () {
                   setState(() {
@@ -148,14 +127,16 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
                   });
                 },
                 child: SizedBox.expand(
-                  child: FittedBox(
-                    fit: BoxFit.cover,
-                    child: SizedBox(
-                      width: _controller.value.size.width,
-                      height: _controller.value.size.height,
-                      child: VideoPlayer(_controller),
-                    ),
-                  ),
+                  child: _isImage
+                      ? Image.network(widget.video.videoUrl, fit: BoxFit.contain)
+                      : FittedBox(
+                          fit: BoxFit.cover,
+                          child: SizedBox(
+                            width: _controller!.value.size.width,
+                            height: _controller!.value.size.height,
+                            child: VideoPlayer(_controller!),
+                          ),
+                        ),
                 ),
               ),
 
@@ -176,28 +157,29 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
                       ),
 
                       // Play/Pause central
-                      Center(
-                        child: GestureDetector(
-                          onTap: () => setState(() {
-                            _controller.value.isPlaying
-                                ? _controller.pause()
-                                : _controller.play();
-                          }),
-                          child: AnimatedOpacity(
-                            opacity: _controller.value.isPlaying ? 0.0 : 1.0,
-                            duration: const Duration(milliseconds: 250),
-                            child: Container(
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: Colors.green[400]?.withValues(alpha: 0.9),
+                      if (!_isImage)
+                        Center(
+                          child: GestureDetector(
+                            onTap: () => setState(() {
+                              _controller!.value.isPlaying
+                                  ? _controller!.pause()
+                                  : _controller!.play();
+                            }),
+                            child: AnimatedOpacity(
+                              opacity: _controller!.value.isPlaying ? 0.0 : 1.0,
+                              duration: const Duration(milliseconds: 250),
+                              child: Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: Colors.green[400]?.withValues(alpha: 0.9),
+                                ),
+                                child: const Icon(Icons.play_arrow,
+                                    size: 64, color: Colors.white),
                               ),
-                              child: const Icon(Icons.play_arrow,
-                                  size: 64, color: Colors.white),
                             ),
                           ),
                         ),
-                      ),
 
                       // Botones de acción a la derecha
                       Positioned(
@@ -245,12 +227,37 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
                         ),
                       ),
 
+                      // Gradiente oscuro para asegurar que el texto sea siempre legible
+                      Positioned(
+                        bottom: 0,
+                        left: 0,
+                        right: 0,
+                        height: 250,
+                        child: IgnorePointer(
+                          child: Container(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.bottomCenter,
+                                end: Alignment.topCenter,
+                                colors: [
+                                  Colors.black.withValues(alpha: 0.8),
+                                  Colors.transparent,
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+
                       // Info del profesor abajo
                       Positioned(
                         left: 12,
                         right: 80,
-                        bottom: 50,
-                        child: _buildAuthorInfo(),
+                        bottom: 20,
+                        child: GestureDetector(
+                          onTap: () => showDescriptionBottomSheet(context, widget.video),
+                          child: _buildAuthorInfo(),
+                        ),
                       ),
                     ],
                   ),
@@ -358,36 +365,54 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
             ),
             const SizedBox(width: 10),
             // Nombre
-            Text(
-              widget.video.title.isNotEmpty ? widget.video.title : 'Profesor',
-              style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 15),
-            ),
-            const SizedBox(width: 10),
-            // Botón Seguir
-            Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
-              decoration: BoxDecoration(
-                color: const Color(0xFF003399),
-                borderRadius: BorderRadius.circular(16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        widget.video.authorName.isNotEmpty ? widget.video.authorName : 'Usuario',
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15),
+                      ),
+                      const SizedBox(width: 10),
+                      Container(
+                        padding:
+                            const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF003399),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Text('Seguir',
+                            style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  if (widget.video.title.isNotEmpty && widget.video.title != 'Video' && widget.video.title != 'Imagen' && widget.video.title != 'Encuesta' && widget.video.title != 'Flashcard')
+                    Text(
+                      widget.video.title,
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  if (widget.video.description.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      widget.video.description,
+                      style: const TextStyle(color: Colors.white, fontSize: 14),
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ]
+                ],
               ),
-              child: const Text('Seguir',
-                  style: TextStyle(color: Colors.white, fontSize: 12)),
             ),
           ],
         ),
-        const SizedBox(height: 8),
-        // Descripción del video
-        if (widget.video.description.isNotEmpty)
-          Text(
-            widget.video.description,
-            style: const TextStyle(color: Colors.white70, fontSize: 13),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
       ],
     );
   }

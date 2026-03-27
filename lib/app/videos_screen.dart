@@ -1,9 +1,12 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'video_model.dart';
 import 'video_player_widget.dart';
+import 'widgets/feed_flashcard_widget.dart';
+import 'widgets/feed_poll_widget.dart';
 import 'config/app_config.dart';
+import 'config/api_client.dart';
+import 'services/offline_feed_service.dart';
+import 'services/global_ui_service.dart';
 
 /// [VideosScreen] es la pantalla principal que muestra los videos en un formato de scroll vertical,
 /// similar a TikTok.
@@ -23,6 +26,7 @@ class VideosScreen extends StatefulWidget {
 
 class _VideosScreenState extends State<VideosScreen> {
   // --- Variables de Estado para el Scroll Infinito ---
+  final _apiClient = ApiClient();
 
   /// [_videos] almacena la lista de videos que se están mostrando.
   final List<VideoModel> _videos = [];
@@ -66,49 +70,60 @@ class _VideosScreenState extends State<VideosScreen> {
     super.dispose();
   }
 
-  /// Carga videos desde la API de Pexels.
-  /// Esta función se usa tanto para la carga inicial como para cargar más videos.
+  /// Carga videos desde el backend con autenticación JWT.
   Future<void> _fetchVideos() async {
-    final Uri uri = Uri.parse('${AppConfig.videosFeedEndpoint}?page=$_currentPage');
+    final url = '${AppConfig.videosFeedEndpoint}?page=$_currentPage';
 
-    try {
-      final response = await http.get(uri)
-          .timeout(Duration(seconds: AppConfig.httpTimeoutSeconds));
+    final response = await _apiClient.get<List<VideoModel>>(
+      url,
+      requiresAuth: true,
+      fromJson: (json) {
+        final List<dynamic> videoJson = (json['videos'] as List<dynamic>?) ?? [];
+        return videoJson.map((v) => VideoModel.fromBackendJson(v)).toList();
+      },
+    );
 
-      if (response.statusCode == 200) {
-        final Map<String, dynamic> data = json.decode(response.body);
-        final List<dynamic> videoJson =
-            (data['videos'] as List<dynamic>?) ?? [];
-        final newVideos = videoJson.map((json) => VideoModel.fromBackendJson(json)).toList();
+    if (!mounted) return;
 
-        // Actualiza el estado del widget dentro de setState para que la UI se redibuje.
-        if (!mounted) return;
-        setState(() {
-          // Si la API no devuelve videos, asumimos que no hay más.
-          if (newVideos.isEmpty) {
+    if (response.isSuccess && response.data != null) {
+      final newVideos = response.data!;
+      setState(() {
+        if (newVideos.isEmpty) {
+          _hasMore = false;
+        } else {
+          _videos.addAll(newVideos);
+          _currentPage++;
+        }
+        _isLoading = false;
+        _isMoreLoading = false;
+      });
+
+      // Guardamos todo el feed actual en caché silenciosamente
+      OfflineFeedService.saveFeed(_videos);
+    } else {
+      debugPrint('Error fetching videos: ${response.error?.message}');
+
+      // Si falla y es la primera carga, intentamos usar la caché
+      if (_videos.isEmpty) {
+        final cachedVideos = await OfflineFeedService.getCachedFeed();
+        if (cachedVideos.isNotEmpty && mounted) {
+          setState(() {
+            _videos.clear();
+            _videos.addAll(cachedVideos);
             _hasMore = false;
-          } else {
-            // Añade los nuevos videos a la lista existente y avanza el contador de página.
-            _videos.addAll(newVideos);
-            _currentPage++;
-          }
-          _isLoading = false;
-          _isMoreLoading = false;
-        });
-      } else {
-        // Si la API da un error, detenemos los indicadores de carga.
-        if (!mounted) return;
-        setState(() {
-          _isLoading = false;
-          _isMoreLoading = false;
-        });
-        throw Exception('Fallo al cargar videos del backend: ${response.statusCode}');
+            _isLoading = false;
+            _isMoreLoading = false;
+          });
+          GlobalUIService.showInfo('Modo Offline: Mostrando contenido guardado.');
+          return;
+        }
       }
-    } catch (e) {
-      // Si ocurre cualquier otro error (ej. sin conexión a internet), lo muestra en la consola.
-      debugPrint('Error fetching videos: $e.');
+
       if (!mounted) return;
-      setState(() => _isLoading = false);
+      setState(() {
+        _isLoading = false;
+        _isMoreLoading = false;
+      });
     }
   }
 
@@ -149,13 +164,29 @@ class _VideosScreenState extends State<VideosScreen> {
           return const Center(child: CircularProgressIndicator());
         }
 
-        // Si no, obtiene el video y crea el widget reproductor.
+        // Si no, obtiene el video y determina qué widget usar según el tipo de contenido.
         final video = _videos[index];
-        return VideoPlayerWidget(
-          key: Key(video.id), // La key ayuda a Flutter a identificar cada video de forma única.
-          video: video,
-          onVisibilityChanged: widget.onVisibilityChanged, // Pasamos el callback
-        );
+
+        if (video.contentType == 'flashcard') {
+          return FeedFlashcardWidget(
+            key: Key('fc_${video.id}'),
+            video: video,
+            onVisibilityChanged: widget.onVisibilityChanged,
+          );
+        } else if (video.contentType == 'encuesta') {
+          return FeedPollWidget(
+            key: Key('poll_${video.id}'),
+            video: video,
+            onVisibilityChanged: widget.onVisibilityChanged,
+          );
+        } else {
+          // Por defecto ('video' o 'imagen') usamos el VideoPlayerWidget 
+          return VideoPlayerWidget(
+            key: Key('vid_${video.id}'),
+            video: video,
+            onVisibilityChanged: widget.onVisibilityChanged,
+          );
+        }
       },
     );
   }
