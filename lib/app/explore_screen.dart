@@ -19,6 +19,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
   final _apiClient = ApiClient();
 
   late Future<List<VideoModel>> _popularVideosFuture;
+  late Future<List<Map<String, dynamic>>> _trendsFuture;
 
   // Categorías de exploración
   final List<Map<String, dynamic>> _categories = [
@@ -31,20 +32,21 @@ class _ExploreScreenState extends State<ExploreScreen> {
   ];
   int _selectedCategoryIndex = 0;
 
-  // Hashtags trending (estáticos por ahora, podrían venir de un endpoint futuro)
-  final List<Map<String, dynamic>> _trendingTags = [
-    {'tag': '#IngenieríaUTB', 'count': '2.4k', 'color': const Color(0xFF003399)},
-    {'tag': '#SemanaCultural', 'count': '856', 'color': const Color(0xFF8E24AA)},
-    {'tag': '#Parciales', 'count': '12k', 'color': const Color(0xFF2E7D32)},
-    {'tag': '#FutbolUTB', 'count': '320', 'color': const Color(0xFFE65100)},
-    {'tag': '#Investigación', 'count': '1.1k', 'color': const Color(0xFF00838F)},
-    {'tag': '#BecasUTB', 'count': '540', 'color': const Color(0xFFC62828)},
+  // Paleta de colores para los tags generados dinámicamente
+  final List<Color> _tagColors = const [
+    Color(0xFF003399), // Azul UTB
+    Color(0xFF8E24AA), // Púrpura
+    Color(0xFF2E7D32), // Verde
+    Color(0xFFE65100), // Naranja
+    Color(0xFF00838F), // Cian oscuro
+    Color(0xFFC62828), // Rojo
   ];
 
   @override
   void initState() {
     super.initState();
     _popularVideosFuture = _fetchPopularVideos();
+    _trendsFuture = _fetchTrends();
   }
 
   @override
@@ -53,7 +55,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
     super.dispose();
   }
 
-  /// Obtiene videos populares del backend.
+  /// Obtiene contenido popular del backend.
   Future<List<VideoModel>> _fetchPopularVideos() async {
     final response = await _apiClient.get(
       '${AppConfig.recommendPopularEndpoint}?n=6',
@@ -63,6 +65,25 @@ class _ExploreScreenState extends State<ExploreScreen> {
       return (response.data as List)
           .map((json) => VideoModel.fromBackendJson(json))
           .toList();
+    }
+    return [];
+  }
+
+  /// Obtiene tendencias reales del backend
+  Future<List<Map<String, dynamic>>> _fetchTrends() async {
+    final response = await _apiClient.get(
+      '${AppConfig.apiBaseUrl}/v1/trends',
+    );
+
+    if (response.isSuccess && response.data != null) {
+      final data = response.data as Map<String, dynamic>;
+      if (data['trends'] != null && data['trends'] is List) {
+         final list = data['trends'] as List;
+         return list.map<Map<String, dynamic>>((e) => {
+           'tag': e['tag']?.toString() ?? '',
+           'count': (e['count'] is int) ? e['count'] : int.tryParse(e['count']?.toString() ?? '0') ?? 0,
+         }).toList();
+      }
     }
     return [];
   }
@@ -285,50 +306,84 @@ class _ExploreScreenState extends State<ExploreScreen> {
             ],
           ),
           const SizedBox(height: 14),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: _trendingTags.map((tag) {
-              return Material(
-                color: (tag['color'] as Color).withOpacity(0.08),
-                borderRadius: BorderRadius.circular(20),
-                child: InkWell(
-                  onTap: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => SearchResultsScreen(query: tag['tag'] as String),
+          FutureBuilder<List<Map<String, dynamic>>>(
+            future: _trendsFuture,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const SizedBox(
+                  height: 60,
+                  child: Center(child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF003399))),
+                );
+              }
+              if (snapshot.hasError || !snapshot.hasData || snapshot.data!.isEmpty) {
+                return const SizedBox(
+                  height: 60,
+                  child: Center(child: Text('No hay tendencias disponibles hoy.', style: TextStyle(color: Colors.grey))),
+                );
+              }
+
+              final tags = snapshot.data!;
+              return Wrap(
+                spacing: 8,
+                runSpacing: 10,
+                children: List.generate(tags.length, (index) {
+                  final tag = tags[index];
+                  // Asignar un color de la paleta cíclicamente para mantener la estética
+                  final color = _tagColors[index % _tagColors.length];
+                  
+                  return Material(
+                    color: color.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(24), // Más redondeado, estilo "píldora"
+                    child: InkWell(
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => SearchResultsScreen(query: tag['tag'] as String),
+                          ),
+                        );
+                      },
+                      borderRadius: BorderRadius.circular(24),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: color.withOpacity(0.2)),
+                          borderRadius: BorderRadius.circular(24),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              tag['tag'] as String,
+                              style: TextStyle(
+                                color: color,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 13,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: color.withOpacity(0.15),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                '${tag['count']}',
+                                style: TextStyle(
+                                  color: color,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                    );
-                  },
-                  borderRadius: BorderRadius.circular(20),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          tag['tag'] as String,
-                          style: TextStyle(
-                            color: tag['color'] as Color,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13,
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          tag['count'] as String,
-                          style: TextStyle(
-                            color: (tag['color'] as Color).withOpacity(0.6),
-                            fontSize: 11,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
                     ),
-                  ),
-                ),
+                  );
+                }),
               );
-            }).toList(),
+            },
           ),
         ],
       ),
@@ -353,7 +408,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
               ),
               const SizedBox(width: 10),
               const Text(
-                'Videos Populares',
+                'Contenido Popular',
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w700,

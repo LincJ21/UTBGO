@@ -419,13 +419,34 @@ func handleUploadVideoV2(c *gin.Context) {
 		RespondError(c, ErrStorage("Error al subir el archivo"))
 		return
 	}
+
+	thumbnailURL := result.URL // Fallback si no hay miniatura
+
+	// Procesar miniatura opcional (thumbnail)
+	if thumbHeader, err := c.FormFile("thumbnail"); err == nil {
+		if imgErr := validator.ValidateImage(thumbHeader); imgErr == nil {
+			if thumbFile, err := thumbHeader.Open(); err == nil {
+				defer thumbFile.Close()
+				publicID := fmt.Sprintf("%d_%s", time.Now().UnixNano(), thumbHeader.Filename)
+				if thumbResult, err := Storage.UploadImage(c.Request.Context(), thumbFile, "thumbnails", publicID, false); err == nil {
+					thumbnailURL = thumbResult.URL
+					Logger.Info("Thumbnail personalizado subido", "url", thumbnailURL)
+				} else {
+					Logger.Warn("Error subiendo thumbnail", "error", err)
+				}
+			}
+		} else {
+			Logger.Warn("Thumbnail inválido, usando fallback", "error", imgErr.Message)
+		}
+	}
+
 	// Guardar en base de datos
 	video := &Video{
 		Title:        req.Title,
 		Description:  req.Description,
 		AuthorID:     userID,
 		VideoURL:     result.URL,
-		ThumbnailURL: result.URL, // Por ahora usar la misma URL
+		ThumbnailURL: thumbnailURL,
 		ContentType:  contentType,
 	}
 
@@ -743,7 +764,7 @@ func handleGetFeedV2(c *gin.Context) {
 			"content_type":  v.ContentType,
 			"created_at":    v.CreatedAt.Format(time.RFC3339),
 			"likes":         v.Likes,
-			"comments":      0,
+			"comments":      v.Comments,
 			"is_liked":      false,
 			"is_bookmarked": false,
 		})
@@ -896,4 +917,22 @@ func handleUpdateInterestsV2(c *gin.Context) {
 
 	Logger.Info("Intereses actualizados exitosamente", "user_id", userID, "intereses", req.Interests)
 	RespondSuccess(c, gin.H{"message": "Intereses actualizados correctamente", "interests": req.Interests})
+}
+
+// handleGetTrends devuelve los hashtags más populares extraídos de las descripciones de los videos.
+func handleGetTrends(c *gin.Context) {
+	limit := 6 // Por defecto, Top 6 tendencias
+	trends, err := Repos.Videos.GetTrends(c.Request.Context(), limit)
+	if err != nil {
+		Logger.Error("Error al obtener trends", "error", err)
+		RespondError(c, ErrDatabase("Error al obtener tendencias"))
+		return
+	}
+	
+	// Asegurar que nunca retorne null
+	if trends == nil {
+		trends = []TrendingTag{}
+	}
+	
+	RespondSuccess(c, gin.H{"trends": trends})
 }

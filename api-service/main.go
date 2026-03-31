@@ -439,6 +439,9 @@ func main() {
 			videos.POST("/:id/comments", AuthMiddleware(), handleCreateCommentV2)
 		}
 
+		// Tendencias
+		v1.GET("/trends", handleGetTrends)
+
 		// Recomendaciones (Gorse)
 		recommend := v1.Group("/recommend")
 		{

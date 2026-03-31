@@ -202,9 +202,17 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
                             _actionButton(
                               icon: Icons.comment,
                               color: Colors.white,
-                              text: '152', // Valor de ejemplo
+                              text: widget.video.comments.toString(),
                               onTap: () {
-                                showCommentsBottomSheet(context, videoId: widget.video.id);
+                                showCommentsBottomSheet(
+                                  context, 
+                                  videoId: widget.video.id,
+                                  onCommentAdded: () {
+                                    setState(() {
+                                      widget.video.comments++;
+                                    });
+                                  },
+                                );
                               },
                             ),
                             const SizedBox(height: 16),

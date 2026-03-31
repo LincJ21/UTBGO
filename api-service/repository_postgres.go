@@ -248,6 +248,7 @@ func (r *PostgresVideoRepository) GetFeed(ctx context.Context, limit, offset int
 			tc.codigo as content_type,
 			c.fecha_creacion,
 			(SELECT COUNT(*) FROM interacciones WHERE id_contenido = c.id_contenido AND id_tipo_interaccion = $1) as likes,
+			(SELECT COUNT(*) FROM comentarios co WHERE co.id_contenido = c.id_contenido) as comments,
 			COALESCE(p.nombre, 'Usuario') as author_name
 		FROM contenidos c
 		JOIN tipos_contenido tc ON c.id_tipo_contenido = tc.id_tipo_contenido
@@ -267,7 +268,7 @@ func (r *PostgresVideoRepository) GetFeed(ctx context.Context, limit, offset int
 	var videos []Video
 	for rows.Next() {
 		var v Video
-		if err := rows.Scan(&v.ID, &v.Title, &v.Description, &v.VideoURL, &v.ThumbnailURL, &v.ContentType, &v.CreatedAt, &v.Likes, &v.AuthorName); err != nil {
+		if err := rows.Scan(&v.ID, &v.Title, &v.Description, &v.VideoURL, &v.ThumbnailURL, &v.ContentType, &v.CreatedAt, &v.Likes, &v.Comments, &v.AuthorName); err != nil {
 			Logger.Warn("Error scanning feed row", "error", err)
 			continue
 		}
@@ -289,6 +290,7 @@ func (r *PostgresVideoRepository) Search(ctx context.Context, query string, limi
 			tc.codigo as content_type,
 			c.fecha_creacion,
 			(SELECT COUNT(*) FROM interacciones WHERE id_contenido = c.id_contenido AND id_tipo_interaccion = $1) as likes,
+			(SELECT COUNT(*) FROM comentarios co WHERE co.id_contenido = c.id_contenido) as comments,
 			COALESCE(p.nombre, 'Usuario') as author_name
 		FROM contenidos c
 		JOIN tipos_contenido tc ON c.id_tipo_contenido = tc.id_tipo_contenido
@@ -309,7 +311,7 @@ func (r *PostgresVideoRepository) Search(ctx context.Context, query string, limi
 	var videos []Video
 	for rows.Next() {
 		var v Video
-		if err := rows.Scan(&v.ID, &v.Title, &v.Description, &v.VideoURL, &v.ThumbnailURL, &v.ContentType, &v.CreatedAt, &v.Likes, &v.AuthorName); err != nil {
+		if err := rows.Scan(&v.ID, &v.Title, &v.Description, &v.VideoURL, &v.ThumbnailURL, &v.ContentType, &v.CreatedAt, &v.Likes, &v.Comments, &v.AuthorName); err != nil {
 			Logger.Warn("Error scanning search row", "error", err)
 			continue
 		}
@@ -345,7 +347,8 @@ func (r *PostgresVideoRepository) GetByIDs(ctx context.Context, ids []int) ([]Vi
 		SELECT 
 			c.id_contenido, c.titulo, COALESCE(c.descripcion, ''), c.url_contenido, COALESCE(c.url_thumbnail, ''),
 			tc.codigo as content_type,
-			(SELECT COUNT(*) FROM interacciones WHERE id_contenido = c.id_contenido AND id_tipo_interaccion = $1) as likes
+			(SELECT COUNT(*) FROM interacciones WHERE id_contenido = c.id_contenido AND id_tipo_interaccion = $1) as likes,
+			(SELECT COUNT(*) FROM comentarios co WHERE co.id_contenido = c.id_contenido) as comments
 		FROM contenidos c
 		JOIN tipos_contenido tc ON c.id_tipo_contenido = tc.id_tipo_contenido
 		WHERE c.id_contenido = ANY($2) AND c.id_estado_contenido = $3
@@ -362,7 +365,7 @@ func (r *PostgresVideoRepository) GetByIDs(ctx context.Context, ids []int) ([]Vi
 	var videos []Video
 	for rows.Next() {
 		var v Video
-		if err := rows.Scan(&v.ID, &v.Title, &v.Description, &v.VideoURL, &v.ThumbnailURL, &v.ContentType, &v.Likes); err != nil {
+		if err := rows.Scan(&v.ID, &v.Title, &v.Description, &v.VideoURL, &v.ThumbnailURL, &v.ContentType, &v.Likes, &v.Comments); err != nil {
 			Logger.Warn("Error scanning batch row", "error", err)
 			continue
 		}
@@ -378,7 +381,8 @@ func (r *PostgresVideoRepository) GetPopular(ctx context.Context, limit int) ([]
 		SELECT 
 			c.id_contenido, c.titulo, COALESCE(c.descripcion, ''), c.url_contenido, COALESCE(c.url_thumbnail, ''),
 			tc.codigo as content_type,
-			(SELECT COUNT(*) FROM interacciones WHERE id_contenido = c.id_contenido AND id_tipo_interaccion = $1) as likes
+			(SELECT COUNT(*) FROM interacciones WHERE id_contenido = c.id_contenido AND id_tipo_interaccion = $1) as likes,
+			(SELECT COUNT(*) FROM comentarios co WHERE co.id_contenido = c.id_contenido) as comments
 		FROM contenidos c
 		JOIN tipos_contenido tc ON c.id_tipo_contenido = tc.id_tipo_contenido
 		WHERE c.id_estado_contenido = $2
@@ -396,7 +400,7 @@ func (r *PostgresVideoRepository) GetPopular(ctx context.Context, limit int) ([]
 	var videos []Video
 	for rows.Next() {
 		var v Video
-		if err := rows.Scan(&v.ID, &v.Title, &v.Description, &v.VideoURL, &v.ThumbnailURL, &v.ContentType, &v.Likes); err != nil {
+		if err := rows.Scan(&v.ID, &v.Title, &v.Description, &v.VideoURL, &v.ThumbnailURL, &v.ContentType, &v.Likes, &v.Comments); err != nil {
 			Logger.Warn("Error scanning popular  row", "error", err)
 			continue
 		}
@@ -419,7 +423,8 @@ func (r *PostgresVideoRepository) GetSimilar(ctx context.Context, videoID int, l
 		SELECT 
 			c.id_contenido, c.titulo, COALESCE(c.descripcion, ''), c.url_contenido, COALESCE(c.url_thumbnail, ''),
 			tc.codigo as content_type,
-			(SELECT COUNT(*) FROM interacciones WHERE id_contenido = c.id_contenido AND id_tipo_interaccion = $1) as likes
+			(SELECT COUNT(*) FROM interacciones WHERE id_contenido = c.id_contenido AND id_tipo_interaccion = $1) as likes,
+			(SELECT COUNT(*) FROM comentarios co WHERE co.id_contenido = c.id_contenido) as comments
 		FROM contenidos c
 		JOIN tipos_contenido tc ON c.id_tipo_contenido = tc.id_tipo_contenido
 		WHERE c.id_estado_contenido = $2 AND c.id_contenido != $3
@@ -437,7 +442,7 @@ func (r *PostgresVideoRepository) GetSimilar(ctx context.Context, videoID int, l
 	var videos []Video
 	for rows.Next() {
 		var v Video
-		if err := rows.Scan(&v.ID, &v.Title, &v.Description, &v.VideoURL, &v.ThumbnailURL, &v.ContentType, &v.Likes); err != nil {
+		if err := rows.Scan(&v.ID, &v.Title, &v.Description, &v.VideoURL, &v.ThumbnailURL, &v.ContentType, &v.Likes, &v.Comments); err != nil {
 			Logger.Warn("Error scanning similar row", "error", err)
 			continue
 		}
@@ -447,6 +452,41 @@ func (r *PostgresVideoRepository) GetSimilar(ctx context.Context, videoID int, l
 }
 
 // --- Implementación PostgreSQL de InteractionRepository ---
+
+func (r *PostgresVideoRepository) GetTrends(ctx context.Context, limit int) ([]TrendingTag, error) {
+	start := time.Now()
+	
+	// Extraer hashtags dinámicamente de las descripciones publicadas usando regexp_matches
+	rows, err := DB.QueryContext(ctx, `
+		SELECT word[1] as tag, count(*) 
+		FROM (
+			SELECT regexp_matches(descripcion, '#[a-zA-Z0-9_]+', 'g') as word 
+			FROM contenidos 
+			WHERE id_estado_contenido = $1 AND descripcion IS NOT NULL
+		) sub 
+		GROUP BY word 
+		ORDER BY count DESC 
+		LIMIT $2`,
+		publishedContentStateID, limit)
+
+	LogDB("GET_TRENDS", "contenidos", time.Since(start).Milliseconds(), err)
+
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var trends []TrendingTag
+	for rows.Next() {
+		var t TrendingTag
+		if err := rows.Scan(&t.Tag, &t.Count); err != nil {
+			Logger.Warn("Error scanning trend row", "error", err)
+			continue
+		}
+		trends = append(trends, t)
+	}
+	return trends, rows.Err()
+}
 
 type PostgresInteractionRepository struct{}
 

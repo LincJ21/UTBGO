@@ -192,7 +192,15 @@ class _FeedPollWidgetState extends State<FeedPollWidget> {
                   color: Colors.white,
                   text: widget.video.comments.toString(),
                   onTap: () {
-                    showCommentsBottomSheet(context, videoId: widget.video.id);
+                    showCommentsBottomSheet(
+                      context, 
+                      videoId: widget.video.id,
+                      onCommentAdded: () {
+                        setState(() {
+                          widget.video.comments++;
+                        });
+                      },
+                    );
                   },
                 ),
                 const SizedBox(height: 16),

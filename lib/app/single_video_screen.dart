@@ -1,18 +1,39 @@
 import 'package:flutter/material.dart';
 import 'video_model.dart';
 import 'video_player_widget.dart';
+import 'widgets/feed_flashcard_widget.dart';
+import 'widgets/feed_poll_widget.dart';
 
-/// Pantalla autónoma para reproducir un único video.
-/// Se usa principalmente al navegar desde los resultados de búsqueda.
+/// Pantalla autónoma para reproducir un único contenido (video, flashcard o encuesta).
+/// Se usa principalmente al navegar desde los resultados de búsqueda o explorar.
 class SingleVideoScreen extends StatelessWidget {
   final VideoModel video;
 
   const SingleVideoScreen({super.key, required this.video});
 
+  Widget _buildContent() {
+    if (video.contentType == 'flashcard') {
+      return FeedFlashcardWidget(
+        video: video,
+        onVisibilityChanged: (_) {},
+      );
+    } else if (video.contentType == 'encuesta') {
+      return FeedPollWidget(
+        video: video,
+        onVisibilityChanged: (_) {},
+      );
+    } else {
+      return VideoPlayerWidget(
+        video: video,
+        onVisibilityChanged: (_) {},
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black, // Fondo negro para la reproducción de video
+      backgroundColor: Colors.black, // Fondo negro para la reproducción
       extendBodyBehindAppBar: true, 
       appBar: AppBar(
         backgroundColor: Colors.transparent,
@@ -25,11 +46,7 @@ class SingleVideoScreen extends StatelessWidget {
           )
         ]),
       ),
-      body: VideoPlayerWidget(
-        video: video,
-        // Al estar en una pantalla suelta, no nos importa alterar el bottom bar padre
-        onVisibilityChanged: (isVisible) {}, 
-      ),
+      body: _buildContent(),
     );
   }
 }

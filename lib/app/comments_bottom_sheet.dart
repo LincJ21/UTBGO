@@ -1,13 +1,12 @@
 import 'package:flutter/material.dart';
+import 'services/comment_api_service.dart';
+import 'package:timeago/timeago.dart' as timeago;
 
 // ─────────────────────────────────────────────────────────────
 //  MODELO DE DATOS
 // ─────────────────────────────────────────────────────────────
 
 /// Representa un comentario individual con soporte para respuestas anidadas.
-///
-/// El campo [isAuthor] permite distinguir visualmente al creador del video
-/// con una etiqueta "Autor".  [replies] almacena las respuestas al comentario.
 class CommentModel {
   final String id;
   final String userName;
@@ -28,6 +27,21 @@ class CommentModel {
     List<CommentModel>? replies,
     this.isLiked = false,
   }) : replies = replies ?? [];
+
+  /// Factory manual para mapear la respuesta del backend
+  factory CommentModel.fromMap(Map<String, dynamic> map, {bool isAuthor = false}) {
+    DateTime createdAt = DateTime.parse(map['created_at']);
+    return CommentModel(
+      id: map['id']?.toString() ?? '',
+      userName: map['username'] ?? 'Usuario',
+      content: map['text'] ?? '',
+      timeAgo: timeago.format(createdAt, locale: 'es'),
+      likesCount: 0, // Por ahora no viene en la v2 inmediatamente
+      isLiked: false,
+      isAuthor: isAuthor, // Necesitarías comparar los IDs para saber si es autor
+      replies: [], // TODO: implementar unidesidado después si el backend lo soporta
+    );
+  }
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -35,12 +49,7 @@ class CommentModel {
 // ─────────────────────────────────────────────────────────────
 
 /// Muestra el panel inferior de comentarios como un modal arrastrable.
-///
-/// Se invoca desde cualquier pantalla con:
-/// ```dart
-/// showCommentsBottomSheet(context, videoId: video.id);
-/// ```
-void showCommentsBottomSheet(BuildContext context, {String? videoId}) {
+void showCommentsBottomSheet(BuildContext context, {String? videoId, VoidCallback? onCommentAdded}) {
   showModalBottomSheet(
     context: context,
     isScrollControlled: true,
@@ -55,6 +64,7 @@ void showCommentsBottomSheet(BuildContext context, {String? videoId}) {
       builder: (context, scrollController) => _CommentsSheet(
         scrollController: scrollController,
         videoId: videoId,
+        onCommentAdded: onCommentAdded,
       ),
     ),
   );
@@ -67,10 +77,12 @@ void showCommentsBottomSheet(BuildContext context, {String? videoId}) {
 class _CommentsSheet extends StatefulWidget {
   final ScrollController scrollController;
   final String? videoId;
+  final VoidCallback? onCommentAdded;
 
   const _CommentsSheet({
     required this.scrollController,
     this.videoId,
+    this.onCommentAdded,
   });
 
   @override
@@ -80,9 +92,13 @@ class _CommentsSheet extends StatefulWidget {
 class _CommentsSheetState extends State<_CommentsSheet> {
   final TextEditingController _inputController = TextEditingController();
   final FocusNode _inputFocusNode = FocusNode();
+  final CommentApiService _commentService = CommentApiService();
 
-  late List<CommentModel> _comments;
-  int _totalComments = 152;
+  List<CommentModel> _comments = [];
+  int _totalComments = 0;
+  bool _isLoading = true;
+  bool _isSending = false;
+  String? _errorMessage;
 
   // ── Colores del diseño ──
   static const _authorBadgeBg = Color(0xFFE8EAF6);
@@ -94,7 +110,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
   @override
   void initState() {
     super.initState();
-    _comments = _buildMockComments();
+    _fetchComments();
   }
 
   @override
@@ -104,51 +120,38 @@ class _CommentsSheetState extends State<_CommentsSheet> {
     super.dispose();
   }
 
-  // ── Datos de ejemplo (coinciden con la imagen) ──
+  // ── Carga de Datos ──
+  Future<void> _fetchComments() async {
+    if (widget.videoId == null) {
+      setState(() {
+        _isLoading = false;
+        _errorMessage = "ID de video no proporcionado.";
+      });
+      return;
+    }
 
-  List<CommentModel> _buildMockComments() {
-    return [
-      CommentModel(
-        id: '1',
-        userName: 'Profesor 1',
-        content:
-            '¡Hola a todos! Espero que disfruten este recorrido por el laboratorio de creatividad. 🎓\n💡',
-        timeAgo: 'Hace 2h',
-        likesCount: 24,
-        isAuthor: true,
-      ),
-      CommentModel(
-        id: '2',
-        userName: 'Mariana López',
-        content:
-            'Me encanta la iniciativa del laboratorio "El Patio". ¿Cuándo son las inscripciones para el taller de LEGO? 😄',
-        timeAgo: 'Hace 45m',
-        likesCount: 8,
-        isLiked: true,
-        replies: [
-          CommentModel(
-            id: '2-1',
-            userName: 'Carlos David',
-            content:
-                'Hola Mariana, empiezan la próxima semana. Pásate por la oficina de bienestar.',
-            timeAgo: 'Hace 10m',
-            likesCount: 2,
-          ),
-        ],
-      ),
-      CommentModel(
-        id: '3',
-        userName: 'Juan Pérez',
-        content: 'Excelente video profe! 🔥🔥🔥',
-        timeAgo: 'Hace 5m',
-      ),
-      CommentModel(
-        id: '4',
-        userName: 'Luisa F.',
-        content: 'Necesito info sobre las prácticas 👋',
-        timeAgo: 'Hace 1m',
-      ),
-    ];
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    final response = await _commentService.getComments(widget.videoId!);
+    
+    if (mounted) {
+      if (response.isSuccess && response.data != null) {
+        final List<dynamic> currentData = response.data!;
+        setState(() {
+          _comments = currentData.map((e) => CommentModel.fromMap(e)).toList();
+          _totalComments = _comments.length;
+          _isLoading = false;
+        });
+      } else {
+        setState(() {
+          _errorMessage = response.error?.message ?? "Error al cargar los comentarios";
+          _isLoading = false;
+        });
+      }
+    }
   }
 
   // ── Acciones ──
@@ -171,22 +174,53 @@ class _CommentsSheetState extends State<_CommentsSheet> {
   }
 
   /// Envía un nuevo comentario y limpia el campo de texto.
-  void _sendComment() {
+  Future<void> _sendComment() async {
     final text = _inputController.text.trim();
     if (text.isEmpty) return;
+    if (widget.videoId == null) {
+      debugPrint('Error: Video ID es nulo al intentar comentar.');
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No pudimos enviar tu comentario en este momento.')));
+      return;
+    }
+    if (_isSending) return;
 
     setState(() {
-      _comments.add(CommentModel(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
-        userName: 'Tú',
-        content: text,
-        timeAgo: 'Ahora',
-      ));
-      _totalComments++;
+      _isSending = true;
     });
 
-    _inputController.clear();
-    _inputFocusNode.unfocus();
+    try {
+      final response = await _commentService.createComment(widget.videoId!, text);
+
+      if (mounted) {
+        if (response.isSuccess) {
+          _inputController.clear();
+          _inputFocusNode.unfocus();
+          // Recargar los comentarios para mostrar el nuevo
+          await _fetchComments();
+          
+          // Actualizar contador en la UI principal
+          widget.onCommentAdded?.call();
+        } else {
+          // Si el backend de Go rechaza explícitamente el comentario, mostramos el mensaje de error de la API
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(response.error?.message ?? 'No pudimos enviar tu comentario en este momento.')),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('Excepción al enviar comentario: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Ocurrió un problema de red. Por favor, intenta nuevamente.')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSending = false;
+        });
+      }
+    }
   }
 
   // ── Build ──
@@ -204,13 +238,19 @@ class _CommentsSheetState extends State<_CommentsSheet> {
           _buildHeader(),
           const Divider(height: 1, color: Color(0xFFEEEEEE)),
           Expanded(
-            child: ListView.builder(
-              controller: widget.scrollController,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-              itemCount: _comments.length,
-              itemBuilder: (_, i) =>
-                  _buildCommentTile(_comments[i], isReply: false),
-            ),
+            child: _isLoading 
+                ? const Center(child: CircularProgressIndicator())
+                : _errorMessage != null
+                    ? Center(child: Text(_errorMessage!, style: const TextStyle(color: Colors.red)))
+                    : _comments.isEmpty
+                        ? const Center(child: Text('No hay comentarios aún. ¡Sé el primero!'))
+                        : ListView.builder(
+                            controller: widget.scrollController,
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                            itemCount: _comments.length,
+                            itemBuilder: (_, i) =>
+                                _buildCommentTile(_comments[i], isReply: false),
+                          ),
           ),
           const Divider(height: 1, color: Color(0xFFEEEEEE)),
           _buildCommentInput(),
@@ -435,15 +475,17 @@ class _CommentsSheetState extends State<_CommentsSheet> {
             const SizedBox(width: 8),
             // Botón de enviar
             GestureDetector(
-              onTap: _sendComment,
+              onTap: _isSending ? null : _sendComment,
               child: Container(
                 width: 36,
                 height: 36,
-                decoration: const BoxDecoration(
-                  color: _sendButtonColor,
+                decoration: BoxDecoration(
+                  color: _isSending ? Colors.grey : _sendButtonColor,
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.send, color: Colors.white, size: 18),
+                child: _isSending 
+                    ? const Padding(padding: EdgeInsets.all(8.0), child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                    : const Icon(Icons.send, color: Colors.white, size: 18),
               ),
             ),
           ],

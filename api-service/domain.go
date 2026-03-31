@@ -115,6 +115,12 @@ type PollOption struct {
 	Order int    `json:"order"`
 }
 
+// TrendingTag representa un hashtag/tendencia popular.
+type TrendingTag struct {
+	Tag   string `json:"tag"`
+	Count int    `json:"count"`
+}
+
 // --- Modelos de Administración ---
 
 // AdminUser representa un usuario con información extendida para el panel de administración.
@@ -272,6 +278,9 @@ type VideoRepository interface {
 
 	// GetSimilar obtiene videos similares a un ID específico (por ejemplo, el mismo autor o misma categoría).
 	GetSimilar(ctx context.Context, videoID int, limit int) ([]Video, error)
+
+	// GetTrends obtiene los hashtags más populares dentro de la aplicación.
+	GetTrends(ctx context.Context, limit int) ([]TrendingTag, error)
 }
 
 // InteractionRepository define las operaciones de persistencia para interacciones (likes).

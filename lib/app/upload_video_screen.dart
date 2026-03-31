@@ -29,6 +29,7 @@ class _UploadVideoScreenState extends State<UploadVideoScreen> {
 
   // Controladores Generales
   XFile? _selectedFile; // Para Video o Imagen principal
+  XFile? _selectedThumbnail; // ParaPortada (Miniatura opcional)
   final _descriptionController = TextEditingController();
 
   // Controladores Encuesta
@@ -56,7 +57,7 @@ class _UploadVideoScreenState extends State<UploadVideoScreen> {
     super.dispose();
   }
 
-  Future<void> _pickFile({bool isVideo = false, bool isFlashcardFront = false, bool isFlashcardBack = false}) async {
+  Future<void> _pickFile({bool isVideo = false, bool isFlashcardFront = false, bool isFlashcardBack = false, bool isThumbnail = false}) async {
     try {
       XFile? pickedFile;
       if (isVideo) {
@@ -72,6 +73,8 @@ class _UploadVideoScreenState extends State<UploadVideoScreen> {
           _flashcardFrontImage = pickedFile;
         } else if (isFlashcardBack) {
           _flashcardBackImage = pickedFile;
+        } else if (isThumbnail) {
+          _selectedThumbnail = pickedFile;
         } else {
           _selectedFile = pickedFile;
         }
@@ -155,6 +158,10 @@ class _UploadVideoScreenState extends State<UploadVideoScreen> {
         request.fields['title'] = _contentTypes[_selectedContentType].label;
         request.fields['description'] = _descriptionController.text;
         request.files.add(await http.MultipartFile.fromPath('video', _selectedFile!.path));
+
+        if (_selectedThumbnail != null) {
+          request.files.add(await http.MultipartFile.fromPath('thumbnail', _selectedThumbnail!.path));
+        }
 
         final response = await request.send();
 
@@ -474,6 +481,42 @@ class _UploadVideoScreenState extends State<UploadVideoScreen> {
             contentPadding: const EdgeInsets.all(16),
           ),
         ),
+        if (isVideo) ...[
+          const SizedBox(height: 24),
+          const Text('Miniatura (Opcional)', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          GestureDetector(
+            onTap: () => _pickFile(isThumbnail: true),
+            child: Container(
+              height: 120,
+              decoration: BoxDecoration(
+                color: const Color(0xFFFAFAFA),
+                border: Border.all(color: Colors.grey.shade300, width: 1.5),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: _selectedThumbnail != null
+                  ? ClipRRect(
+                      borderRadius: BorderRadius.circular(14),
+                      child: Image.file(
+                        File(_selectedThumbnail!.path),
+                        fit: BoxFit.cover,
+                        width: double.infinity,
+                      ),
+                    )
+                  : Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.add_photo_alternate, size: 32, color: Colors.grey.shade400),
+                        const SizedBox(width: 12),
+                        Text(
+                          'Subir imagen de portada',
+                          style: TextStyle(color: Colors.grey.shade500, fontSize: 14),
+                        ),
+                      ],
+                    ),
+            ),
+          ),
+        ],
       ],
     );
   }
