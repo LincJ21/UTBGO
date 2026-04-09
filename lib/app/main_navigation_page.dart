@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'config/app_config.dart';
+import 'config/api_client.dart';
 import 'profile_screen.dart';
 import 'login_screen.dart';
 import 'videos_screen.dart';
@@ -53,10 +56,32 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
   Future<void> _checkAuthStatus() async {
     const storage = FlutterSecureStorage();
     final token = await storage.read(key: 'jwt_token');
+    
+    // Si ya estamos autenticados, actualicemos el rol silenciosamente
+    if (token != null && token.isNotEmpty) {
+      _cacheUserRoleSilently();
+    }
+    
     if (!mounted) return;
     setState(() {
       _isAuthenticated = token != null && token.isNotEmpty;
     });
+  }
+
+  Future<void> _cacheUserRoleSilently() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (prefs.getString('role') != null && prefs.getString('role') != 'estudiante') return;
+      
+      final apiClient = ApiClient();
+      final res = await apiClient.get('${AppConfig.backendBaseUrl}/api/v1/profile/me', requiresAuth: true);
+      if (res.isSuccess && res.data != null) {
+        final data = res.data as Map<String, dynamic>;
+        if (data['user'] != null && data['user']['role'] != null) {
+          await prefs.setString('role', data['user']['role']);
+        }
+      }
+    } catch (_) {}
   }
 
   void _onLoginSuccess() {

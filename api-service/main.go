@@ -90,6 +90,36 @@ func AuthMiddleware() gin.HandlerFunc {
 	}
 }
 
+// OptionalAuthMiddleware extrae el userID del token JWT si está presente,
+// pero no bloquea la petición si no hay token. Ideal para endpoints públicos
+// que necesitan personalización opcional (ej: feed con is_liked/is_bookmarked).
+func OptionalAuthMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		authHeader := c.GetHeader("Authorization")
+		if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
+			c.Next()
+			return
+		}
+
+		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+			}
+			return []byte(JWT_SECRET_KEY), nil
+		})
+
+		if err == nil && token.Valid {
+			if claims, ok := token.Claims.(jwt.MapClaims); ok {
+				if userID, ok := claims["user_id"].(float64); ok {
+					c.Set("userID", userID)
+				}
+			}
+		}
+		c.Next()
+	}
+}
+
 // initIdentityBroker inicializa el Identity Broker con los proveedores OIDC
 // disponibles según las variables de entorno configuradas.
 // Si un proveedor no tiene credenciales, se omite sin error (degradación graciosa).
@@ -393,7 +423,7 @@ func main() {
 			videos.POST("/:id/comments", AuthMiddleware(), handleCreateComment) // Nueva ruta
 			videos.GET("/feed", handleGetVideosFeed)
 			videos.GET("/search", handleSearchVideos)
-			videos.POST("/upload", AuthMiddleware(), handleUploadVideo)
+			videos.POST("/upload", AuthMiddleware(), RequireProfessor(), handleUploadVideo)
 		}
 		profile := api.Group("/profile")
 		{
@@ -430,9 +460,9 @@ func main() {
 		// Videos
 		videos := v1.Group("/videos")
 		{
-			videos.GET("/feed", handleGetFeedV2)
+			videos.GET("/feed", OptionalAuthMiddleware(), handleGetFeedV2)
 			videos.GET("/search", handleSearchV2)
-			videos.POST("/upload", AuthMiddleware(), handleUploadVideoV2)
+			videos.POST("/upload", AuthMiddleware(), RequireProfessor(), handleUploadVideoV2)
 			videos.POST("/:id/like", AuthMiddleware(), handleToggleLikeV2)
 			videos.POST("/:id/bookmark", AuthMiddleware(), handleToggleBookmarkV2)
 			videos.GET("/:id/comments", handleGetCommentsV2)
@@ -460,19 +490,23 @@ func main() {
 			profile.PATCH("/me", AuthMiddleware(), handleUpdateProfile)
 			profile.POST("/avatar", AuthMiddleware(), handleUploadAvatar)
 			profile.POST("/interests", AuthMiddleware(), handleUpdateInterestsV2)
+			profile.GET("/bookmarks", AuthMiddleware(), handleGetBookmarksV2)
+			profile.GET("/publications", AuthMiddleware(), handleGetMyPublications)
+			profile.GET("/public/:id", AuthMiddleware(), handleGetPublicProfile)
+			profile.GET("/public/:id/publications", AuthMiddleware(), handleGetPublicPublications)
 		}
 
 		// --- Flashcards ---
 		flashcards := v1.Group("/flashcards")
 		{
-			flashcards.POST("", AuthMiddleware(), handleCreateFlashcard)   // Crear flashcard
+			flashcards.POST("", AuthMiddleware(), RequireProfessor(), handleCreateFlashcard)   // Crear flashcard
 			flashcards.GET("/:id", handleGetFlashcard)                     // Obtener flashcard
 		}
 
 		// --- Encuestas ---
 		polls := v1.Group("/polls")
 		{
-			polls.POST("", AuthMiddleware(), handleCreatePoll)    // Crear encuesta
+			polls.POST("", AuthMiddleware(), RequireProfessor(), handleCreatePoll)    // Crear encuesta
 			polls.GET("/:id", AuthMiddleware(), handleGetPoll)    // Obtener encuesta
 			polls.POST("/:id/vote", AuthMiddleware(), handleVotePoll) // Votar
 		}

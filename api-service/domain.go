@@ -36,6 +36,19 @@ type Profile struct {
 	WebsiteURL string `json:"website_url,omitempty"`
 }
 
+// PublicProfile representa la versión pública del perfil de un usuario, expuesta para que otros usuarios la vean.
+type PublicProfile struct {
+	UserID     int       `json:"user_id"`
+	Username   string    `json:"username"`
+	AvatarURL  string    `json:"avatar_url,omitempty"`
+	Bio        string    `json:"bio,omitempty"`
+	Faculty    string    `json:"faculty,omitempty"`
+	CvlacURL   string    `json:"cvlac_url,omitempty"`
+	WebsiteURL string    `json:"website_url,omitempty"`
+	Role       string    `json:"role"`
+	Interests  []string  `json:"interests,omitempty"`
+}
+
 // UpdateProfileRequest representa los datos enviados para actualizar el perfil.
 type UpdateProfileRequest struct {
 	Name       string `json:"name" binding:"required,max=100"`
@@ -248,6 +261,9 @@ type ProfileRepository interface {
 
 	// UpdateAvatar actualiza la URL del avatar.
 	UpdateAvatar(ctx context.Context, userID int, avatarURL string) error
+
+	// GetPublicProfile busca el perfil público de un usuario y lo acopla junto con su rol.
+	GetPublicProfile(ctx context.Context, userID int) (*PublicProfile, error)
 }
 
 // VideoRepository define las operaciones de persistencia para videos.
@@ -262,7 +278,7 @@ type VideoRepository interface {
 	GetFeed(ctx context.Context, limit, offset int, userID *int) ([]Video, error)
 
 	// Search busca videos por título o descripción.
-	Search(ctx context.Context, query string, limit int) ([]Video, error)
+	Search(ctx context.Context, query string, limit int, userID *int) ([]Video, error)
 
 	// GetLikesCount obtiene el número de likes de un video.
 	GetLikesCount(ctx context.Context, videoID int) (int, error)
@@ -274,10 +290,13 @@ type VideoRepository interface {
 	GetByIDs(ctx context.Context, ids []int) ([]Video, error)
 
 	// GetPopular obtiene los videos más populares basados en interacciones (likes).
-	GetPopular(ctx context.Context, limit int) ([]Video, error)
+	GetPopular(ctx context.Context, limit int, userID *int) ([]Video, error)
 
 	// GetSimilar obtiene videos similares a un ID específico (por ejemplo, el mismo autor o misma categoría).
-	GetSimilar(ctx context.Context, videoID int, limit int) ([]Video, error)
+	GetSimilar(ctx context.Context, videoID int, limit int, userID *int) ([]Video, error)
+
+	// GetByAuthor obtiene todos los contenidos publicados por un autor específico.
+	GetByAuthor(ctx context.Context, authorID int, userID *int) ([]Video, error)
 
 	// GetTrends obtiene los hashtags más populares dentro de la aplicación.
 	GetTrends(ctx context.Context, limit int) ([]TrendingTag, error)

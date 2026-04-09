@@ -72,16 +72,53 @@ class _VideosScreenState extends State<VideosScreen> {
 
   /// Carga videos desde el backend con autenticación JWT.
   Future<void> _fetchVideos() async {
-    final url = '${AppConfig.videosFeedEndpoint}?page=$_currentPage';
+    // Intentamos cargar primero desde el Motor de Recomendaciones de IA
+    // Si la lista de IA nos devuelve vacío o falla, usamos el Feed general como Fallback seguro.
+    final recommendUrl = '${AppConfig.recommendPersonalizedEndpoint}?n=10';
+    
+    // NOTA: Como la API de recomendaciones no tiene endpoint con "page",
+    // en la primera página pedimos IA. Para las siguientes páginas (scroll infinito), 
+    // pasamos directamente al Feed General para no pedir lo mismo.
+    
+    ApiResponse<List<VideoModel>> response;
+    bool usingFallback = _currentPage > 1;
 
-    final response = await _apiClient.get<List<VideoModel>>(
-      url,
-      requiresAuth: true,
-      fromJson: (json) {
-        final List<dynamic> videoJson = (json['videos'] as List<dynamic>?) ?? [];
-        return videoJson.map((v) => VideoModel.fromBackendJson(v)).toList();
-      },
-    );
+    if (!usingFallback) {
+      // Pedimos a la IA
+      response = await _apiClient.get<List<VideoModel>>(
+        recommendUrl,
+        requiresAuth: true,
+        fromJson: (json) {
+          // El JSON de recomendaciones en Go devuelve una lista cruda
+          final List<dynamic> videoJson = (json as List<dynamic>?) ?? [];
+          return videoJson.map((v) => VideoModel.fromBackendJson(v)).toList();
+        },
+      );
+
+      // Verificamos si la IA nos falló o está vacía
+      if (!response.isSuccess || response.data == null || response.data!.isEmpty) {
+        usingFallback = true;
+      }
+    } else {
+      // Si ya falló o es página > 1, creamos un "mock" de error para forzar el fallback local
+      response = ApiResponse<List<VideoModel>>.error(ApiError(ApiErrorType.serverError, 'Fallback forced'));
+    }
+
+    // ACTIVAMOS EL FALLBACK SEGURO (El Feed General)
+    if (usingFallback) {
+      if (_currentPage == 1) {
+        debugPrint('⚠️ [API] IA no disponible o sin gustos suficientes. Activando Fallback al Feed General/Reciente.');
+      }
+      final fallbackUrl = '${AppConfig.videosFeedEndpoint}?page=$_currentPage';
+      response = await _apiClient.get<List<VideoModel>>(
+        fallbackUrl,
+        requiresAuth: true,
+        fromJson: (json) {
+          final List<dynamic> videoJson = (json['videos'] as List<dynamic>?) ?? [];
+          return videoJson.map((v) => VideoModel.fromBackendJson(v)).toList();
+        },
+      );
+    }
 
     if (!mounted) return;
 
@@ -103,7 +140,7 @@ class _VideosScreenState extends State<VideosScreen> {
     } else {
       debugPrint('Error fetching videos: ${response.error?.message}');
 
-      // Si falla y es la primera carga, intentamos usar la caché
+      // Si falla y es la primera carga, intentamos usar la caché offline
       if (_videos.isEmpty) {
         final cachedVideos = await OfflineFeedService.getCachedFeed();
         if (cachedVideos.isNotEmpty && mounted) {

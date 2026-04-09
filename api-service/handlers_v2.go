@@ -586,6 +586,39 @@ func handleToggleBookmarkV2(c *gin.Context) {
 	})
 }
 
+// handleGetBookmarksV2 obtiene la lista de bookmarks del usuario.
+// Soporta paginacion local (limit, offset).
+func handleGetBookmarksV2(c *gin.Context) {
+	userID := getUserIDFromContext(c)
+	if userID == 0 {
+		RespondError(c, ErrUnauthorized())
+		return
+	}
+
+	limit := 20
+	if limitStr := c.Query("limit"); limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
+			limit = l
+		}
+	}
+
+	offset := 0
+	if offsetStr := c.Query("offset"); offsetStr != "" {
+		if o, err := strconv.Atoi(offsetStr); err == nil && o >= 0 {
+			offset = o
+		}
+	}
+
+	videos, err := Repos.Bookmarks.GetUserBookmarks(c.Request.Context(), userID, limit, offset)
+	if err != nil {
+		Logger.Error("Error get bookmarks", "error", err, "user_id", userID)
+		RespondError(c, ErrDatabase("Error al obtener guardados"))
+		return
+	}
+
+	RespondSuccess(c, videos)
+}
+
 // handleGetCommentsV2 obtiene comentarios usando repositorios.
 // Usa caché Redis si está disponible (TTL: 1 min).
 func handleGetCommentsV2(c *gin.Context) {
@@ -765,8 +798,8 @@ func handleGetFeedV2(c *gin.Context) {
 			"created_at":    v.CreatedAt.Format(time.RFC3339),
 			"likes":         v.Likes,
 			"comments":      v.Comments,
-			"is_liked":      false,
-			"is_bookmarked": false,
+			"is_liked":      v.IsLiked,
+			"is_bookmarked": v.IsBookmarked,
 		})
 	}
 
@@ -818,7 +851,13 @@ func handleSearchV2(c *gin.Context) {
 		}
 	}
 
-	videos, err := Repos.Videos.Search(c.Request.Context(), query, 20)
+	// Obtener userID si está autenticado (opcional)
+	var userID *int
+	if id := getUserIDFromContext(c); id != 0 {
+		userID = &id
+	}
+
+	videos, err := Repos.Videos.Search(c.Request.Context(), query, 20, userID)
 	if err != nil {
 		Logger.Error("Error en búsqueda", "error", err, "query", query)
 		RespondError(c, ErrDatabase("Error al buscar videos"))
@@ -837,6 +876,8 @@ func handleSearchV2(c *gin.Context) {
 			"content_type":  v.ContentType,
 			"created_at":    v.CreatedAt.Format(time.RFC3339),
 			"likes":         v.Likes,
+			"is_liked":      v.IsLiked,
+			"is_bookmarked": v.IsBookmarked,
 		})
 	}
 

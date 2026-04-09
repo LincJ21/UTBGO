@@ -79,6 +79,11 @@ class AppConfig {
   static String get profileEndpoint => '$backendBaseUrl/api/v1/profile';
   static String get profileMeEndpoint => '$profileEndpoint/me';
   static String get profileAvatarEndpoint => '$profileEndpoint/avatar';
+  static String get profileBookmarksEndpoint => '$profileEndpoint/bookmarks';
+  static String get profilePublicationsEndpoint => '$profileEndpoint/publications';
+  
+  static String publicProfileEndpoint(int id) => '$profileEndpoint/public/$id';
+  static String publicProfilePublicationsEndpoint(int id) => '$profileEndpoint/public/$id/publications';
 
   /// Genera URL para like de un video.
   static String videoLikeUrl(String videoId) => '$videosEndpoint/$videoId/like';
@@ -95,6 +100,9 @@ class AppConfig {
 
   /// URL base para recomendaciones.
   static String get recommendBaseUrl => '$backendBaseUrl/api/v1/recommend';
+
+  /// Endpoint para recomendaciones personalizadas (For You).
+  static String get recommendPersonalizedEndpoint => '$recommendBaseUrl/personalized';
 
   /// Endpoint para videos populares/trending.
   static String get recommendPopularEndpoint => '$recommendBaseUrl/popular';

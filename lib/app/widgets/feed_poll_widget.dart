@@ -138,13 +138,31 @@ class _FeedPollWidgetState extends State<FeedPollWidget> {
             child: _isLoading
                 ? const CircularProgressIndicator(color: Colors.white)
                 : Container(
-                    width: MediaQuery.of(context).size.width * 0.85,
-                    padding: const EdgeInsets.all(24),
+                    width: MediaQuery.of(context).size.width * 0.88,
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
                     decoration: BoxDecoration(
-                      color: Colors.blueGrey[900],
-                      borderRadius: BorderRadius.circular(20),
+                      gradient: LinearGradient(
+                        colors: [
+                          const Color(0xFF0F172A).withValues(alpha: 0.95), // Slate 900
+                          const Color(0xFF1E293B).withValues(alpha: 0.95), // Slate 800
+                        ],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(28),
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.1), width: 1.5),
                       boxShadow: [
-                        BoxShadow(color: Colors.black54, blurRadius: 10, offset: Offset(0, 5))
+                        BoxShadow(
+                          color: Colors.tealAccent.withValues(alpha: 0.05),
+                          blurRadius: 30,
+                          spreadRadius: -5,
+                          offset: const Offset(0, 10),
+                        ),
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.5),
+                          blurRadius: 20,
+                          offset: const Offset(0, 10),
+                        ),
                       ],
                     ),
                     child: Column(
@@ -155,17 +173,28 @@ class _FeedPollWidgetState extends State<FeedPollWidget> {
                           textAlign: TextAlign.center,
                           style: const TextStyle(
                             color: Colors.white,
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
+                            fontSize: 22,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: -0.5,
+                            shadows: [
+                              Shadow(color: Colors.black45, blurRadius: 4, offset: Offset(0, 2))
+                            ],
                           ),
                         ),
-                        const SizedBox(height: 24),
+                        const SizedBox(height: 32),
                         ..._options.map((opt) => _buildOptionRow(opt)),
                         if (_hasVoted) ...[
-                          const SizedBox(height: 16),
-                          Text(
-                            '$_totalVotes votos totales',
-                            style: TextStyle(color: Colors.grey[400], fontSize: 12),
+                          const SizedBox(height: 20),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.05),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              '$_totalVotes votos totales',
+                              style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w600),
+                            ),
                           ),
                         ]
                       ],
@@ -263,49 +292,77 @@ class _FeedPollWidgetState extends State<FeedPollWidget> {
     double percentage = _totalVotes > 0 ? votes / _totalVotes : 0;
     
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.only(bottom: 16),
       child: GestureDetector(
         onTap: () {
           if (!_hasVoted) _vote(opt['id']);
         },
-        child: Container(
-          height: 48,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOutCubic,
+          height: 56,
           decoration: BoxDecoration(
-            color: Colors.blueGrey[800],
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.blueGrey[700]!),
+            color: _hasVoted ? Colors.white.withValues(alpha: 0.03) : Colors.white.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: _hasVoted ? Colors.white.withValues(alpha: 0.05) : Colors.white.withValues(alpha: 0.2),
+              width: 1,
+            ),
           ),
+          clipBehavior: Clip.antiAlias,
           child: Stack(
             children: [
               if (_hasVoted)
-                FractionallySizedBox(
+                AnimatedFractionallySizedBox(
+                  duration: const Duration(milliseconds: 800),
+                  curve: Curves.fastOutSlowIn,
                   widthFactor: percentage,
                   child: Container(
                     decoration: BoxDecoration(
-                      color: Colors.blue[600]?.withValues(alpha: 0.4),
-                      borderRadius: BorderRadius.circular(8),
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF38BDF8), Color(0xFF3B82F6)], // Light Blue to Blue
+                        begin: Alignment.centerLeft,
+                        end: Alignment.centerRight,
+                      ),
+                      borderRadius: BorderRadius.circular(16),
                     ),
                   ),
                 ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        opt['text'],
-                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+              Align(
+                alignment: Alignment.center,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          opt['text'],
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: _hasVoted ? FontWeight.w600 : FontWeight.w500,
+                            fontSize: 15,
+                            shadows: const [Shadow(color: Colors.black45, blurRadius: 2, offset: Offset(0, 1))],
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
-                    ),
-                    if (_hasVoted)
-                      Text(
-                        '${(percentage * 100).toStringAsFixed(1)}%',
-                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                      ),
-                  ],
+                      if (_hasVoted)
+                        Container(
+                          padding: const EdgeInsets.only(left: 12),
+                          child: Text(
+                            '${(percentage * 100).toStringAsFixed(1)}%',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                              shadows: [Shadow(color: Colors.black45, blurRadius: 2, offset: Offset(0, 1))],
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
               ),
             ],

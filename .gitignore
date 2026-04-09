@@ -186,11 +186,17 @@ android/shas_exact.txt
 # ==============================================================================
 # DOCUMENTOS INTERNOS
 # ==============================================================================
+# Documentos internos (SAD se mantiene si es necesario para entrega)
 AUDITORIA_PRODUCCION.md
 avanceactual.md
 faltante.md
-SAD.md
+# SAD.md  <-- Descomentar si no quieres que se suba el SAD
 
 # Scripts de prueba local
-test_upstash.py
-verify_e2e.py
+# Scripts de prueba local
+/test_upstash.py
+/verify_e2e.py
+
+# Permitimos la carpeta tests/ y sus scripts
+!tests/
+!tests/*.py

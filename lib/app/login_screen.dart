@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:aad_oauth/aad_oauth.dart';
 import 'package:aad_oauth/model/config.dart';
@@ -89,6 +90,12 @@ class _LoginScreenState extends State<LoginScreen> {
       bool needsOnboarding = true;
       if (profileResponse.isSuccess && profileResponse.data != null) {
         final data = profileResponse.data as Map<String, dynamic>;
+        
+        final prefs = await SharedPreferences.getInstance();
+        if (data['user'] != null && data['user']['role'] != null) {
+          await prefs.setString('role', data['user']['role']);
+        }
+        
         final interests = data['interests'] as List<dynamic>?;
         if (interests != null && interests.isNotEmpty) {
           needsOnboarding = false; // Ya tiene intereses, omitir Onboarding

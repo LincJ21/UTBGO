@@ -21,10 +21,11 @@ func (r *PostgresUserRepository) FindByID(ctx context.Context, id int) (*User, e
 	var user User
 	var avatarURL sql.NullString
 	err := DB.QueryRowContext(ctx, `
-		SELECT u.id_usuario, COALESCE(p.nombre || ' ' || p.apellido, u.email), u.email, p.avatar_url, u.fecha_registro
+		SELECT u.id_usuario, COALESCE(p.nombre || ' ' || p.apellido, u.email), u.email, p.avatar_url, u.fecha_registro, tu.codigo
 		FROM usuarios u
+		JOIN tipos_usuario tu ON u.id_tipo_usuario = tu.id_tipo_usuario
 		LEFT JOIN perfiles p ON u.id_usuario = p.id_usuario
-		WHERE u.id_usuario = $1`, id).Scan(&user.ID, &user.Username, &user.Email, &avatarURL, &user.CreatedAt)
+		WHERE u.id_usuario = $1`, id).Scan(&user.ID, &user.Username, &user.Email, &avatarURL, &user.CreatedAt, &user.Role)
 
 	LogDB("SELECT", "usuarios", time.Since(start).Milliseconds(), err)
 
@@ -45,10 +46,11 @@ func (r *PostgresUserRepository) FindByEmail(ctx context.Context, email string) 
 	var user User
 	var avatarURL sql.NullString
 	err := DB.QueryRowContext(ctx, `
-		SELECT u.id_usuario, COALESCE(p.nombre || ' ' || p.apellido, u.email), u.email, p.avatar_url, u.password_hash
+		SELECT u.id_usuario, COALESCE(p.nombre || ' ' || p.apellido, u.email), u.email, p.avatar_url, u.password_hash, tu.codigo
 		FROM usuarios u
+		JOIN tipos_usuario tu ON u.id_tipo_usuario = tu.id_tipo_usuario
 		LEFT JOIN perfiles p ON u.id_usuario = p.id_usuario
-		WHERE u.email = $1`, email).Scan(&user.ID, &user.Username, &user.Email, &avatarURL, &user.PasswordHash)
+		WHERE u.email = $1`, email).Scan(&user.ID, &user.Username, &user.Email, &avatarURL, &user.PasswordHash, &user.Role)
 
 	LogDB("SELECT", "usuarios", time.Since(start).Milliseconds(), err)
 
@@ -180,6 +182,61 @@ func (r *PostgresProfileRepository) UpdateAvatar(ctx context.Context, userID int
 	return err
 }
 
+func (r *PostgresProfileRepository) GetPublicProfile(ctx context.Context, userID int) (*PublicProfile, error) {
+	start := time.Now()
+	var profile PublicProfile
+	var avatarURL sql.NullString
+	var bio, faculty, cvlac, website sql.NullString
+	var interestsJSON sql.NullString
+
+	err := DB.QueryRowContext(ctx, `
+		SELECT 
+			u.id_usuario, p.nombre || ' ' || p.apellido, p.avatar_url, 
+			p.biografia, p.facultad, p.cvlac_url, p.website_url, 
+			tu.codigo, array_to_json(p.intereses)
+		FROM usuarios u
+		JOIN perfiles p ON u.id_usuario = p.id_usuario
+		JOIN tipos_usuario tu ON u.id_tipo_usuario = tu.id_tipo_usuario
+		WHERE u.id_usuario = $1`, userID).Scan(
+			&profile.UserID, &profile.Username, &avatarURL,
+			&bio, &faculty, &cvlac, &website, 
+			&profile.Role, &interestsJSON)
+
+	LogDB("SELECT", "perfiles_public", time.Since(start).Milliseconds(), err)
+
+	if err == sql.ErrNoRows {
+		return nil, nil // Not found
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	if avatarURL.Valid {
+		profile.AvatarURL = avatarURL.String
+	}
+	if bio.Valid {
+		profile.Bio = bio.String
+	}
+	if faculty.Valid {
+		profile.Faculty = faculty.String
+	}
+	if cvlac.Valid {
+		profile.CvlacURL = cvlac.String
+	}
+	if website.Valid {
+		profile.WebsiteURL = website.String
+	}
+
+	// Parsear JSON intereses en slice
+	// Para uso público, asumo que sí se envían
+	if interestsJSON.Valid && interestsJSON.String != "" {
+		// En la app no usamos los interests públicos actualmente, pero los retornamos por completitud.
+		profile.Interests = []string{}
+	}
+
+	return &profile, nil
+}
+
 // --- Implementación PostgreSQL de VideoRepository ---
 
 type PostgresVideoRepository struct{}
@@ -242,6 +299,12 @@ func (r *PostgresVideoRepository) Create(ctx context.Context, video *Video) (int
 func (r *PostgresVideoRepository) GetFeed(ctx context.Context, limit, offset int, userID *int) ([]Video, error) {
 	start := time.Now()
 
+	// Si userID es 0 o nil, las banderas serán falsas por defecto
+	idForFlags := 0
+	if userID != nil {
+		idForFlags = *userID
+	}
+
 	rows, err := DB.QueryContext(ctx, `
 		SELECT 
 			c.id_contenido, c.titulo, COALESCE(c.descripcion, ''), c.url_contenido, COALESCE(c.url_thumbnail, ''),
@@ -249,14 +312,17 @@ func (r *PostgresVideoRepository) GetFeed(ctx context.Context, limit, offset int
 			c.fecha_creacion,
 			(SELECT COUNT(*) FROM interacciones WHERE id_contenido = c.id_contenido AND id_tipo_interaccion = $1) as likes,
 			(SELECT COUNT(*) FROM comentarios co WHERE co.id_contenido = c.id_contenido) as comments,
-			COALESCE(p.nombre, 'Usuario') as author_name
+			COALESCE(p.nombre || ' ' || COALESCE(p.apellido, ''), 'Usuario UTB') as author_name, 
+			c.id_autor,
+			COALESCE((SELECT TRUE FROM interacciones WHERE id_usuario = $5 AND id_contenido = c.id_contenido AND id_tipo_interaccion = $1 LIMIT 1), FALSE) as is_liked,
+			COALESCE((SELECT TRUE FROM favoritos WHERE id_usuario = $5 AND id_contenido = c.id_contenido LIMIT 1), FALSE) as is_bookmarked
 		FROM contenidos c
 		JOIN tipos_contenido tc ON c.id_tipo_contenido = tc.id_tipo_contenido
 		LEFT JOIN perfiles p ON c.id_autor = p.id_usuario
 		WHERE c.id_estado_contenido = $2
 		ORDER BY c.fecha_creacion DESC
 		LIMIT $3 OFFSET $4`,
-		likeInteractionTypeID, publishedContentStateID, limit, offset)
+		likeInteractionTypeID, publishedContentStateID, limit, offset, idForFlags)
 
 	LogDB("SELECT", "contenidos_feed", time.Since(start).Milliseconds(), err)
 
@@ -268,7 +334,7 @@ func (r *PostgresVideoRepository) GetFeed(ctx context.Context, limit, offset int
 	var videos []Video
 	for rows.Next() {
 		var v Video
-		if err := rows.Scan(&v.ID, &v.Title, &v.Description, &v.VideoURL, &v.ThumbnailURL, &v.ContentType, &v.CreatedAt, &v.Likes, &v.Comments, &v.AuthorName); err != nil {
+		if err := rows.Scan(&v.ID, &v.Title, &v.Description, &v.VideoURL, &v.ThumbnailURL, &v.ContentType, &v.CreatedAt, &v.Likes, &v.Comments, &v.AuthorName, &v.AuthorID, &v.IsLiked, &v.IsBookmarked); err != nil {
 			Logger.Warn("Error scanning feed row", "error", err)
 			continue
 		}
@@ -280,9 +346,67 @@ func (r *PostgresVideoRepository) GetFeed(ctx context.Context, limit, offset int
 	return videos, nil
 }
 
-func (r *PostgresVideoRepository) Search(ctx context.Context, query string, limit int) ([]Video, error) {
+func (r *PostgresVideoRepository) GetByAuthor(ctx context.Context, authorID int, userID *int) ([]Video, error) {
+	start := time.Now()
+
+	// Si userID es 0 o nil, las banderas serán falsas por defecto
+	idForFlags := 0
+	if userID != nil {
+		idForFlags = *userID
+	}
+
+	// Obtiene todos los contenidos creados por el autor, ordenados del más reciente al más antiguo.
+	// Por ahora limitamos a 50 pero se podría paginar en el futuro.
+	rows, err := DB.QueryContext(ctx, `
+		SELECT 
+			c.id_contenido, c.titulo, COALESCE(c.descripcion, ''), c.url_contenido, COALESCE(c.url_thumbnail, ''),
+			tc.codigo as content_type,
+			c.fecha_creacion,
+			(SELECT COUNT(*) FROM interacciones WHERE id_contenido = c.id_contenido AND id_tipo_interaccion = $1) as likes,
+			(SELECT COUNT(*) FROM comentarios co WHERE co.id_contenido = c.id_contenido) as comments,
+			COALESCE(p.nombre || ' ' || COALESCE(p.apellido, ''), 'Usuario UTB') as author_name, 
+			c.id_autor,
+			COALESCE((SELECT TRUE FROM interacciones WHERE id_usuario = $4 AND id_contenido = c.id_contenido AND id_tipo_interaccion = $1 LIMIT 1), FALSE) as is_liked,
+			COALESCE((SELECT TRUE FROM favoritos WHERE id_usuario = $4 AND id_contenido = c.id_contenido LIMIT 1), FALSE) as is_bookmarked
+		FROM contenidos c
+		JOIN tipos_contenido tc ON c.id_tipo_contenido = tc.id_tipo_contenido
+		LEFT JOIN perfiles p ON c.id_autor = p.id_usuario
+		WHERE c.id_estado_contenido = $2 AND c.id_autor = $3
+		ORDER BY c.fecha_creacion DESC
+		LIMIT 50`,
+		likeInteractionTypeID, publishedContentStateID, authorID, idForFlags)
+
+	LogDB("SELECT", "contenidos_by_author", time.Since(start).Milliseconds(), err)
+
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var videos []Video
+	for rows.Next() {
+		var v Video
+		if err := rows.Scan(&v.ID, &v.Title, &v.Description, &v.VideoURL, &v.ThumbnailURL, &v.ContentType, &v.CreatedAt, &v.Likes, &v.Comments, &v.AuthorName, &v.AuthorID, &v.IsLiked, &v.IsBookmarked); err != nil {
+			Logger.Warn("Error scanning author publications row", "error", err)
+			continue
+		}
+		videos = append(videos, v)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating author publications: %w", err)
+	}
+	return videos, nil
+}
+
+func (r *PostgresVideoRepository) Search(ctx context.Context, query string, limit int, userID *int) ([]Video, error) {
 	start := time.Now()
 	searchQuery := "%" + strings.ToLower(query) + "%"
+
+	// Si userID es 0 o nil, las banderas serán falsas por defecto
+	idForFlags := 0
+	if userID != nil {
+		idForFlags = *userID
+	}
 
 	rows, err := DB.QueryContext(ctx, `
 		SELECT 
@@ -291,7 +415,10 @@ func (r *PostgresVideoRepository) Search(ctx context.Context, query string, limi
 			c.fecha_creacion,
 			(SELECT COUNT(*) FROM interacciones WHERE id_contenido = c.id_contenido AND id_tipo_interaccion = $1) as likes,
 			(SELECT COUNT(*) FROM comentarios co WHERE co.id_contenido = c.id_contenido) as comments,
-			COALESCE(p.nombre, 'Usuario') as author_name
+			COALESCE(p.nombre || ' ' || COALESCE(p.apellido, ''), 'Usuario UTB') as author_name, 
+			c.id_autor,
+			COALESCE((SELECT TRUE FROM interacciones WHERE id_usuario = $5 AND id_contenido = c.id_contenido AND id_tipo_interaccion = $1 LIMIT 1), FALSE) as is_liked,
+			COALESCE((SELECT TRUE FROM favoritos WHERE id_usuario = $5 AND id_contenido = c.id_contenido LIMIT 1), FALSE) as is_bookmarked
 		FROM contenidos c
 		JOIN tipos_contenido tc ON c.id_tipo_contenido = tc.id_tipo_contenido
 		LEFT JOIN perfiles p ON c.id_autor = p.id_usuario
@@ -299,7 +426,7 @@ func (r *PostgresVideoRepository) Search(ctx context.Context, query string, limi
 		  AND (LOWER(c.titulo) LIKE $3 OR LOWER(c.descripcion) LIKE $3)
 		ORDER BY c.fecha_creacion DESC
 		LIMIT $4`,
-		likeInteractionTypeID, publishedContentStateID, searchQuery, limit)
+		likeInteractionTypeID, publishedContentStateID, searchQuery, limit, idForFlags)
 
 	LogDB("SEARCH", "contenidos", time.Since(start).Milliseconds(), err)
 
@@ -311,8 +438,8 @@ func (r *PostgresVideoRepository) Search(ctx context.Context, query string, limi
 	var videos []Video
 	for rows.Next() {
 		var v Video
-		if err := rows.Scan(&v.ID, &v.Title, &v.Description, &v.VideoURL, &v.ThumbnailURL, &v.ContentType, &v.CreatedAt, &v.Likes, &v.Comments, &v.AuthorName); err != nil {
-			Logger.Warn("Error scanning search row", "error", err)
+		if err := rows.Scan(&v.ID, &v.Title, &v.Description, &v.VideoURL, &v.ThumbnailURL, &v.ContentType, &v.CreatedAt, &v.Likes, &v.Comments, &v.AuthorName, &v.AuthorID, &v.IsLiked, &v.IsBookmarked); err != nil {
+			Logger.Warn("Error scanning search result row", "error", err)
 			continue
 		}
 		videos = append(videos, v)
@@ -347,10 +474,13 @@ func (r *PostgresVideoRepository) GetByIDs(ctx context.Context, ids []int) ([]Vi
 		SELECT 
 			c.id_contenido, c.titulo, COALESCE(c.descripcion, ''), c.url_contenido, COALESCE(c.url_thumbnail, ''),
 			tc.codigo as content_type,
+			c.fecha_creacion,
 			(SELECT COUNT(*) FROM interacciones WHERE id_contenido = c.id_contenido AND id_tipo_interaccion = $1) as likes,
-			(SELECT COUNT(*) FROM comentarios co WHERE co.id_contenido = c.id_contenido) as comments
+			(SELECT COUNT(*) FROM comentarios co WHERE co.id_contenido = c.id_contenido) as comments,
+			COALESCE(p.nombre, 'Usuario') as author_name, c.id_autor
 		FROM contenidos c
 		JOIN tipos_contenido tc ON c.id_tipo_contenido = tc.id_tipo_contenido
+		LEFT JOIN perfiles p ON c.id_autor = p.id_usuario
 		WHERE c.id_contenido = ANY($2) AND c.id_estado_contenido = $3
 		ORDER BY array_position($2, CAST(c.id_contenido AS BIGINT))`,
 		likeInteractionTypeID, ids, publishedContentStateID)
@@ -365,7 +495,7 @@ func (r *PostgresVideoRepository) GetByIDs(ctx context.Context, ids []int) ([]Vi
 	var videos []Video
 	for rows.Next() {
 		var v Video
-		if err := rows.Scan(&v.ID, &v.Title, &v.Description, &v.VideoURL, &v.ThumbnailURL, &v.ContentType, &v.Likes, &v.Comments); err != nil {
+		if err := rows.Scan(&v.ID, &v.Title, &v.Description, &v.VideoURL, &v.ThumbnailURL, &v.ContentType, &v.CreatedAt, &v.Likes, &v.Comments, &v.AuthorName, &v.AuthorID); err != nil {
 			Logger.Warn("Error scanning batch row", "error", err)
 			continue
 		}
@@ -374,23 +504,35 @@ func (r *PostgresVideoRepository) GetByIDs(ctx context.Context, ids []int) ([]Vi
 	return videos, rows.Err()
 }
 
-func (r *PostgresVideoRepository) GetPopular(ctx context.Context, limit int) ([]Video, error) {
+func (r *PostgresVideoRepository) GetPopular(ctx context.Context, limit int, userID *int) ([]Video, error) {
 	start := time.Now()
+
+	// Si userID es 0 o nil, las banderas serán falsas por defecto
+	idForFlags := 0
+	if userID != nil {
+		idForFlags = *userID
+	}
 
 	rows, err := DB.QueryContext(ctx, `
 		SELECT 
 			c.id_contenido, c.titulo, COALESCE(c.descripcion, ''), c.url_contenido, COALESCE(c.url_thumbnail, ''),
 			tc.codigo as content_type,
+			c.fecha_creacion,
 			(SELECT COUNT(*) FROM interacciones WHERE id_contenido = c.id_contenido AND id_tipo_interaccion = $1) as likes,
-			(SELECT COUNT(*) FROM comentarios co WHERE co.id_contenido = c.id_contenido) as comments
+			(SELECT COUNT(*) FROM comentarios co WHERE co.id_contenido = c.id_contenido) as comments,
+			COALESCE(p.nombre || ' ' || COALESCE(p.apellido, ''), 'Usuario UTB') as author_name, 
+			c.id_autor,
+			COALESCE((SELECT TRUE FROM interacciones WHERE id_usuario = $4 AND id_contenido = c.id_contenido AND id_tipo_interaccion = $1 LIMIT 1), FALSE) as is_liked,
+			COALESCE((SELECT TRUE FROM favoritos WHERE id_usuario = $4 AND id_contenido = c.id_contenido LIMIT 1), FALSE) as is_bookmarked
 		FROM contenidos c
 		JOIN tipos_contenido tc ON c.id_tipo_contenido = tc.id_tipo_contenido
+		LEFT JOIN perfiles p ON c.id_autor = p.id_usuario
 		WHERE c.id_estado_contenido = $2
 		ORDER BY likes DESC, c.fecha_creacion DESC
 		LIMIT $3`,
-		likeInteractionTypeID, publishedContentStateID, limit)
+		likeInteractionTypeID, publishedContentStateID, limit, idForFlags)
 
-	LogDB("SELECT_POPULAR", "contenidos", time.Since(start).Milliseconds(), err)
+	LogDB("SELECT", "contenidos_popular", time.Since(start).Milliseconds(), err)
 
 	if err != nil {
 		return nil, err
@@ -400,16 +542,19 @@ func (r *PostgresVideoRepository) GetPopular(ctx context.Context, limit int) ([]
 	var videos []Video
 	for rows.Next() {
 		var v Video
-		if err := rows.Scan(&v.ID, &v.Title, &v.Description, &v.VideoURL, &v.ThumbnailURL, &v.ContentType, &v.Likes, &v.Comments); err != nil {
-			Logger.Warn("Error scanning popular  row", "error", err)
+		if err := rows.Scan(&v.ID, &v.Title, &v.Description, &v.VideoURL, &v.ThumbnailURL, &v.ContentType, &v.CreatedAt, &v.Likes, &v.Comments, &v.AuthorName, &v.AuthorID, &v.IsLiked, &v.IsBookmarked); err != nil {
+			Logger.Warn("Error scanning popular result row", "error", err)
 			continue
 		}
 		videos = append(videos, v)
 	}
-	return videos, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating popular rows: %w", err)
+	}
+	return videos, nil
 }
 
-func (r *PostgresVideoRepository) GetSimilar(ctx context.Context, videoID int, limit int) ([]Video, error) {
+func (r *PostgresVideoRepository) GetSimilar(ctx context.Context, videoID int, limit int, userID *int) ([]Video, error) {
 	start := time.Now()
 
 	// Primero buscamos el autor del video para buscar otros videos del mismo autor
@@ -419,18 +564,25 @@ func (r *PostgresVideoRepository) GetSimilar(ctx context.Context, videoID int, l
 		return nil, err // Fallback or handle error
 	}
 
+	// Si userID es 0 o nil, las banderas serán falsas por defecto
+	idForFlags := 0
+	if userID != nil {
+		idForFlags = *userID
+	}
+
 	rows, err := DB.QueryContext(ctx, `
 		SELECT 
 			c.id_contenido, c.titulo, COALESCE(c.descripcion, ''), c.url_contenido, COALESCE(c.url_thumbnail, ''),
 			tc.codigo as content_type,
 			(SELECT COUNT(*) FROM interacciones WHERE id_contenido = c.id_contenido AND id_tipo_interaccion = $1) as likes,
-			(SELECT COUNT(*) FROM comentarios co WHERE co.id_contenido = c.id_contenido) as comments
+			(SELECT COUNT(*) FROM comentarios co WHERE co.id_contenido = c.id_contenido) as comments,
+			COALESCE((SELECT TRUE FROM interacciones WHERE id_usuario = $5 AND id_contenido = c.id_contenido AND id_tipo_interaccion = $1 LIMIT 1), FALSE) as is_liked,
+			COALESCE((SELECT TRUE FROM favoritos WHERE id_usuario = $5 AND id_contenido = c.id_contenido LIMIT 1), FALSE) as is_bookmarked
 		FROM contenidos c
 		JOIN tipos_contenido tc ON c.id_tipo_contenido = tc.id_tipo_contenido
-		WHERE c.id_estado_contenido = $2 AND c.id_contenido != $3
-		ORDER BY CASE WHEN c.id_autor = $4 THEN 1 ELSE 2 END, likes DESC, c.fecha_creacion DESC
-		LIMIT $5`,
-		likeInteractionTypeID, publishedContentStateID, videoID, authorID, limit)
+		WHERE c.id_autor = $2 AND c.id_contenido != $3 AND c.id_estado_contenido = $4
+		ORDER BY c.fecha_creacion DESC
+		LIMIT $6`, likeInteractionTypeID, authorID, videoID, publishedContentStateID, idForFlags, limit)
 
 	LogDB("SELECT_SIMILAR", "contenidos", time.Since(start).Milliseconds(), err)
 
@@ -442,8 +594,8 @@ func (r *PostgresVideoRepository) GetSimilar(ctx context.Context, videoID int, l
 	var videos []Video
 	for rows.Next() {
 		var v Video
-		if err := rows.Scan(&v.ID, &v.Title, &v.Description, &v.VideoURL, &v.ThumbnailURL, &v.ContentType, &v.Likes, &v.Comments); err != nil {
-			Logger.Warn("Error scanning similar row", "error", err)
+		if err := rows.Scan(&v.ID, &v.Title, &v.Description, &v.VideoURL, &v.ThumbnailURL, &v.ContentType, &v.Likes, &v.Comments, &v.IsLiked, &v.IsBookmarked); err != nil {
+			Logger.Warn("Error scanning similar result row", "error", err)
 			continue
 		}
 		videos = append(videos, v)
@@ -574,13 +726,20 @@ func (r *PostgresBookmarkRepository) IsBookmarked(ctx context.Context, userID, v
 
 func (r *PostgresBookmarkRepository) GetUserBookmarks(ctx context.Context, userID int, limit, offset int) ([]Video, error) {
 	rows, err := DB.QueryContext(ctx, `
-		SELECT c.id_contenido, c.titulo, COALESCE(c.descripcion, ''), c.url_contenido, COALESCE(c.url_thumbnail, ''), tc.codigo as content_type
+		SELECT 
+			c.id_contenido, c.titulo, COALESCE(c.descripcion, ''), c.url_contenido, COALESCE(c.url_thumbnail, ''), 
+			tc.codigo as content_type,
+			COALESCE(p.nombre || ' ' || COALESCE(p.apellido, ''), 'Usuario UTB') as author_name,
+			c.id_autor,
+			COALESCE((SELECT TRUE FROM interacciones WHERE id_usuario = $1 AND id_contenido = c.id_contenido AND id_tipo_interaccion = $4 LIMIT 1), FALSE) as is_liked,
+			TRUE as is_bookmarked
 		FROM favoritos f
 		JOIN contenidos c ON f.id_contenido = c.id_contenido
 		JOIN tipos_contenido tc ON c.id_tipo_contenido = tc.id_tipo_contenido
+		LEFT JOIN perfiles p ON c.id_autor = p.id_usuario
 		WHERE f.id_usuario = $1
 		ORDER BY f.fecha_creacion DESC
-		LIMIT $2 OFFSET $3`, userID, limit, offset)
+		LIMIT $2 OFFSET $3`, userID, limit, offset, likeInteractionTypeID)
 
 	if err != nil {
 		return nil, err
@@ -590,7 +749,7 @@ func (r *PostgresBookmarkRepository) GetUserBookmarks(ctx context.Context, userI
 	var videos []Video
 	for rows.Next() {
 		var v Video
-		if err := rows.Scan(&v.ID, &v.Title, &v.Description, &v.VideoURL, &v.ThumbnailURL, &v.ContentType); err != nil {
+		if err := rows.Scan(&v.ID, &v.Title, &v.Description, &v.VideoURL, &v.ThumbnailURL, &v.ContentType, &v.AuthorName, &v.AuthorID, &v.IsLiked, &v.IsBookmarked); err != nil {
 			Logger.Warn("Error scanning bookmark row", "error", err)
 			continue
 		}

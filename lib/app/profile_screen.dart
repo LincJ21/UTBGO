@@ -12,6 +12,8 @@ import 'settings_screen.dart';
 import 'edit_profile_screen.dart';
 import 'admin_panel_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'video_model.dart';
+import 'single_video_screen.dart';
 /// [ProfileScreen] muestra el perfil del usuario con tabs de Stats y Publicaciones.
 class ProfileScreen extends StatefulWidget {
   final VoidCallback onLogout;
@@ -22,11 +24,9 @@ class ProfileScreen extends StatefulWidget {
   State<ProfileScreen> createState() => _ProfileScreenState();
 }
 
-class _ProfileScreenState extends State<ProfileScreen>
-    with SingleTickerProviderStateMixin {
+class _ProfileScreenState extends State<ProfileScreen> {
   late Future<ProfileModel> _profileFuture;
   final _storage = const FlutterSecureStorage();
-  late TabController _tabController;
   int _selectedPublicationTab = 0;
 
   final _apiClient = ApiClient();
@@ -34,13 +34,11 @@ class _ProfileScreenState extends State<ProfileScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
     _profileFuture = _fetchProfile();
   }
 
   @override
   void dispose() {
-    _tabController.dispose();
     super.dispose();
   }
 
@@ -133,11 +131,37 @@ class _ProfileScreenState extends State<ProfileScreen>
   }
 
   Widget _buildProfileView(BuildContext context, ProfileModel profile) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      floatingActionButton: profile.canUploadVideos
-          ? FloatingActionButton(
-              onPressed: () => Navigator.of(context).push(
+    final isCreator = profile.role == 'profesor' || profile.role == 'admin';
+
+    final tabs = isCreator ? const [
+      Tab(text: 'STATS'),
+      Tab(text: 'PUBLICACIONES'),
+      Tab(icon: Icon(Icons.repeat)),
+      Tab(icon: Icon(Icons.bookmark_border)),
+    ] : const [
+      Tab(text: 'STATS'),
+      Tab(icon: Icon(Icons.repeat)),
+      Tab(icon: Icon(Icons.bookmark_border)),
+    ];
+
+    final tabViews = isCreator ? [
+      _buildStatsTab(profile),
+      _buildPublicationsTab(profile),
+      _buildRepostsTab(profile),
+      _buildBookmarksTab(profile),
+    ] : [
+      _buildStatsTab(profile),
+      _buildRepostsTab(profile),
+      _buildBookmarksTab(profile),
+    ];
+
+    return DefaultTabController(
+      length: tabs.length,
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        floatingActionButton: profile.canUploadVideos
+            ? FloatingActionButton(
+                onPressed: () => Navigator.of(context).push(
                 MaterialPageRoute(
                     builder: (context) => const UploadVideoScreen()),
               ),
@@ -186,6 +210,16 @@ class _ProfileScreenState extends State<ProfileScreen>
                                 painter: _GeometricPainter(),
                               ),
                             ),
+                            // Botón de atrás dinámico (si fue abierto desde otra pantalla, no desde pestañas base)
+                            if (Navigator.canPop(context))
+                              Positioned(
+                                top: 40,
+                                left: 12,
+                                child: IconButton(
+                                  icon: const Icon(Icons.arrow_back, color: Colors.white, size: 28),
+                                  onPressed: () => Navigator.pop(context),
+                                ),
+                              ),
                             // Botón de menú y notificaciones
                             Positioned(
                               top: 40,
@@ -430,30 +464,25 @@ class _ProfileScreenState extends State<ProfileScreen>
               pinned: true,
               delegate: _TabBarDelegate(
                 TabBar(
-                  controller: _tabController,
+                  isScrollable: isCreator,
+                  tabAlignment: isCreator ? TabAlignment.center : TabAlignment.fill,
+                  labelPadding: const EdgeInsets.symmetric(horizontal: 24),
+                  labelStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold),
+                  unselectedLabelStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w500),
                   labelColor: Colors.black,
                   unselectedLabelColor: Colors.grey,
                   indicatorColor: const Color(0xFF003399),
-                  tabs: const [
-                    Tab(text: 'STATS'),
-                    Tab(text: 'PUBLICACIONES'),
-                  ],
+                  tabs: tabs,
                 ),
               ),
             ),
           ];
         },
         body: TabBarView(
-          controller: _tabController,
-          children: [
-            // Tab STATS
-            _buildStatsTab(profile),
-            // Tab PUBLICACIONES
-            _buildPublicationsTab(profile),
-          ],
+          children: tabViews,
         ),
       ),
-    );
+    ));
   }
 
   Widget _buildStatsTab(ProfileModel profile) {
@@ -504,113 +533,130 @@ class _ProfileScreenState extends State<ProfileScreen>
             ],
           ),
         ),
-        // Grid de videos
+        // Grid de contenidos reales
         Expanded(
-          child: _selectedPublicationTab == 0
-              ? GridView.builder(
-                  padding: const EdgeInsets.all(2),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 3,
-                    childAspectRatio: 0.65,
-                    crossAxisSpacing: 2,
-                    mainAxisSpacing: 2,
+          child: FutureBuilder<ApiResponse<List<VideoModel>>>(
+            future: _apiClient.get<List<VideoModel>>(
+              AppConfig.profilePublicationsEndpoint,
+              requiresAuth: true,
+              fromJson: (json) {
+                final List<dynamic> videoJson = (json as List<dynamic>?) ?? [];
+                return videoJson.map((v) => VideoModel.fromBackendJson(v)).toList();
+              },
+            ),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+
+              if (snapshot.hasError || !snapshot.hasData || !snapshot.data!.isSuccess) {
+                return const Center(
+                  child: Text('Error al cargar publicaciones', style: TextStyle(color: Colors.grey)),
+                );
+              }
+
+              final allVideos = snapshot.data!.data ?? [];
+              
+              // Filtrar según el sub-tab seleccionado
+              List<VideoModel> filteredVideos = [];
+              if (_selectedPublicationTab == 0) {
+                filteredVideos = allVideos.where((v) => v.contentType == 'video').toList();
+              } else if (_selectedPublicationTab == 1) {
+                filteredVideos = allVideos.where((v) => v.contentType == 'poll').toList();
+              } else if (_selectedPublicationTab == 2) {
+                filteredVideos = allVideos.where((v) => v.contentType == 'flashcard').toList();
+              }
+
+              if (filteredVideos.isEmpty) {
+                return Center(
+                  child: Text(
+                    _selectedPublicationTab == 0 ? 'No hay videos' : 
+                    _selectedPublicationTab == 1 ? 'No hay encuestas' : 'No hay flashcards',
+                    style: const TextStyle(color: Colors.grey, fontSize: 16),
                   ),
-                  itemCount: 6,
-                  itemBuilder: (context, index) {
-                    final views = [150, 300, 450, 120, 280, 500];
-                    final colors = [
-                      const Color(0xFF455A64),
-                      const Color(0xFF37474F),
-                      const Color(0xFF546E7A),
-                      const Color(0xFF263238),
-                      const Color(0xFF4DB6AC),
-                      const Color(0xFF78909C),
-                    ];
-                    return ClipRRect(
+                );
+              }
+
+              return GridView.builder(
+                padding: const EdgeInsets.all(2),
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 3,
+                  childAspectRatio: 0.65,
+                  crossAxisSpacing: 2,
+                  mainAxisSpacing: 2,
+                ),
+                itemCount: filteredVideos.length,
+                itemBuilder: (context, index) {
+                  final video = filteredVideos[index];
+                  
+                  return GestureDetector(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => SingleVideoScreen(video: video),
+                        ),
+                      );
+                    },
+                    child: ClipRRect(
                       borderRadius: BorderRadius.circular(4),
                       child: Stack(
                         fit: StackFit.expand,
                         children: [
-                          // Thumbnail con gradiente
+                          // Thumbnail oscuro o imagen
                           Container(
                             decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [
-                                  colors[index % colors.length],
-                                  colors[index % colors.length]
-                                      .withValues(alpha: 0.6),
-                                ],
-                                begin: Alignment.topCenter,
-                                end: Alignment.bottomCenter,
-                              ),
-                            ),
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.play_circle_filled,
-                                    size: 44,
-                                    color: Colors.white.withValues(alpha: 0.7)),
-                                const SizedBox(height: 6),
-                                Text('Video ${index + 1}',
-                                    style: TextStyle(
-                                        color: Colors.white
-                                            .withValues(alpha: 0.8),
-                                        fontSize: 11)),
-                              ],
+                              color: const Color(0xFF1E293B),
+                              image: video.thumbnailUrl.isNotEmpty
+                                  ? DecorationImage(
+                                      image: NetworkImage(video.thumbnailUrl),
+                                      fit: BoxFit.cover,
+                                    )
+                                  : null,
                             ),
                           ),
-                          // Gradiente oscuro abajo
-                          Positioned(
-                            bottom: 0,
-                            left: 0,
-                            right: 0,
-                            height: 32,
-                            child: Container(
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  colors: [
-                                    Colors.transparent,
-                                    Colors.black.withValues(alpha: 0.7),
-                                  ],
-                                  begin: Alignment.topCenter,
-                                  end: Alignment.bottomCenter,
-                                ),
-                              ),
+                          // Overlay para que resalte el texto
+                          Container(color: Colors.black.withOpacity(0.3)),
+                          
+                          // Icono Central
+                          Center(
+                            child: Icon(
+                              video.contentType == 'poll' ? Icons.poll_outlined
+                              : video.contentType == 'flashcard' ? Icons.style_outlined
+                              : Icons.play_circle_outline,
+                              color: Colors.white.withOpacity(0.8),
+                              size: 32,
                             ),
                           ),
-                          // Views overlay
+
+                          // Views/Likes overlay
                           Positioned(
                             bottom: 6,
                             left: 6,
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                const Icon(Icons.play_arrow,
-                                    color: Colors.white, size: 14),
-                                const SizedBox(width: 2),
+                                const Icon(Icons.favorite, color: Colors.white, size: 12),
+                                const SizedBox(width: 4),
                                 Text(
-                                  '${views[index % views.length]} Views',
+                                  '${video.likes}',
                                   style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w500),
+                                    color: Colors.white,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
                               ],
                             ),
                           ),
                         ],
                       ),
-                    );
-                  },
-                )
-              : Center(
-                  child: Text(
-                    _selectedPublicationTab == 1
-                        ? 'No hay imágenes'
-                        : 'No hay flashcards',
-                    style: const TextStyle(color: Colors.grey, fontSize: 16),
-                  ),
-                ),
+                    ),
+                  );
+                },
+              );
+            },
+          ),
         ),
       ],
     );
@@ -664,6 +710,122 @@ class _ProfileScreenState extends State<ProfileScreen>
           color: selected ? Colors.black87 : Colors.grey.shade500,
         ),
       ),
+    );
+  }
+
+  Widget _buildRepostsTab(ProfileModel profile) {
+    return const Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.repeat, size: 48, color: Colors.grey),
+          SizedBox(height: 16),
+          Text(
+            'Aún no has reposteado nada',
+            style: TextStyle(color: Colors.grey, fontSize: 16),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBookmarksTab(ProfileModel profile) {
+    return FutureBuilder<List<VideoModel>>(
+      future: _apiClient.get<List<VideoModel>>(
+        AppConfig.profileBookmarksEndpoint,
+        requiresAuth: true,
+        fromJson: (json) {
+          final list = json as List<dynamic>;
+          return list.map((e) => VideoModel.fromBackendJson(e)).toList();
+        },
+      ).then((response) => (response.isSuccess && response.data != null) ? response.data! : []),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError || !snapshot.hasData || snapshot.data!.isEmpty) {
+          return const Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.bookmark_border, size: 48, color: Colors.grey),
+                SizedBox(height: 16),
+                Text(
+                  'Aún no hay videos guardados',
+                  style: TextStyle(color: Colors.grey, fontSize: 16),
+                ),
+              ],
+            ),
+          );
+        }
+
+        final videos = snapshot.data!;
+        return GridView.builder(
+          padding: const EdgeInsets.all(2),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 3,
+            childAspectRatio: 0.65,
+            crossAxisSpacing: 2,
+            mainAxisSpacing: 2,
+          ),
+          itemCount: videos.length,
+          itemBuilder: (context, index) {
+            final video = videos[index];
+            final thumbUrl = video.thumbnailUrl.isNotEmpty ? video.thumbnailUrl : video.videoUrl;
+            return GestureDetector(
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => SingleVideoScreen(video: video),
+                  ),
+                );
+              },
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    thumbUrl.isNotEmpty
+                        ? Image.network(
+                            thumbUrl,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) => Container(
+                                color: Colors.grey[800],
+                                child: const Icon(Icons.play_circle_filled, color: Colors.white, size: 40)),
+                          )
+                        : Container(
+                            color: Colors.grey[800],
+                            child: const Icon(Icons.play_circle_filled, color: Colors.white, size: 40)),
+                    Positioned(
+                      bottom: 0, left: 0, right: 0, height: 32,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [Colors.transparent, Colors.black.withOpacity(0.7)],
+                            begin: Alignment.topCenter, end: Alignment.bottomCenter,
+                          ),
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      bottom: 6, left: 6,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.favorite, color: Colors.white, size: 14),
+                          const SizedBox(width: 2),
+                          Text('${video.likes}',
+                              style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w500)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 }

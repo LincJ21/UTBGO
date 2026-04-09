@@ -2,8 +2,12 @@ import redis
 import os
 from dotenv import load_dotenv
 
-# Load from project root
-load_dotenv(".env")
+# Load from project root (parent of /tests)
+env_path = os.path.join(os.path.dirname(__file__), '..', '.env')
+if os.path.exists(env_path):
+    load_dotenv(env_path)
+else:
+    load_dotenv(".env")
 
 def test_upstash_connectivity():
     redis_url = os.getenv("REDIS_URL")

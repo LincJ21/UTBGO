@@ -1,4 +1,3 @@
-/// [VideoModel] representa la estructura de un video dentro de la app Flutter.
 class VideoModel {
   final String id;
   final String title;
@@ -6,6 +5,7 @@ class VideoModel {
   final String thumbnailUrl;
   final String description;
   final String authorName;
+  final int authorId;
   final String contentType;
   final DateTime createdAt;
   int likes;
@@ -21,6 +21,7 @@ class VideoModel {
     required this.thumbnailUrl,
     required this.description,
     this.authorName = 'Profesor UTB',
+    this.authorId = 0,
     this.contentType = 'video',
     required this.createdAt,
     // Valores iniciales
@@ -40,6 +41,7 @@ class VideoModel {
       'thumbnail_url': thumbnailUrl,
       'description': description,
       'author_name': authorName,
+      'author_id': authorId,
       'content_type': contentType,
       'created_at': createdAt.toIso8601String(),
       'likes': likes,
@@ -59,6 +61,7 @@ class VideoModel {
       thumbnailUrl: json['thumbnail_url'] ?? '',
       description: json['description'] ?? '',
       authorName: json['author_name'] ?? 'Profesor UTB',
+      authorId: json['author_id'] != null ? int.tryParse(json['author_id'].toString()) ?? 0 : 0,
       contentType: json['content_type'] ?? 'video',
       createdAt: json['created_at'] != null 
           ? DateTime.tryParse(json['created_at']) ?? DateTime.now()
@@ -80,6 +83,7 @@ class VideoModel {
       thumbnailUrl: json['thumbnail_url'] ?? '',
       description: json['description'] ?? 'Sin descripción',
       authorName: json['author_name'] ?? 'Profesor UTB',
+      authorId: json['author_id'] is int ? json['author_id'] : int.tryParse(json['author_id']?.toString() ?? '0') ?? 0,
       contentType: json['content_type'] ?? 'video',
       createdAt: json['created_at'] != null
           ? DateTime.tryParse(json['created_at']) ?? DateTime.now()

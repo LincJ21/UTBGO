@@ -54,4 +54,17 @@ El sistema está diseñado bajo una arquitectura de microservicios moderna:
 - **ML Recommendations (Python):** Generación de feeds personalizados.
 - **Infraestructura Cloud:** Neon (PostgreSQL), Upstash (Redis), Cloudinary (Media).
 
+---
+
+## Mantenimiento Futuro
+Para el mantenimiento visual y modernización de código en futuras versiones de Flutter 
+1. Ejecutar en consola dentro de la carpeta raíz de Flutter:
+```bash
+dart fix --apply
+```
+6. **Refactorización de Nomenclatura (Technical Debt):**
+   - El backend en Go utiliza actualmente el término "Video" para referirse a todos los ítems de contenido. Se cambiara internamente (`Video` -> `Content`, `VideoRepository` -> `ContentRepository`) para reflejar mejor la naturaleza agnóstica de la plataforma. Se deben mantener los tags JSON actuales para asegurar la compatibilidad con el frontend de Flutter.
+
+---
+
 

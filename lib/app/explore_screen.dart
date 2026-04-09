@@ -119,6 +119,9 @@ class _ExploreScreenState extends State<ExploreScreen> {
               // ── Categorías ──
               SliverToBoxAdapter(child: _buildCategoriesBar()),
 
+              // ── Novedades (Recientes) ──
+              SliverToBoxAdapter(child: _buildRecentVideosSection()),
+
               // ── Tendencias (Hashtags) ──
               SliverToBoxAdapter(child: _buildTrendingSection()),
 
@@ -274,6 +277,196 @@ class _ExploreScreenState extends State<ExploreScreen> {
             );
           },
         ),
+      ),
+    );
+  }
+
+  Widget _buildRecentVideosSection() {
+    return Padding(
+      padding: const EdgeInsets.only(top: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+            child: Text(
+              'Novedades',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF1E293B),
+                letterSpacing: -0.5,
+              ),
+            ),
+          ),
+          SizedBox(
+            height: 150,
+            child: FutureBuilder<ApiResponse<List<VideoModel>>>(
+              // Llama dinámicamente al feed crudo que siempre trae lo más nuevo
+              future: _apiClient.get<List<VideoModel>>(
+                '${AppConfig.videosFeedEndpoint}?page=1',
+                requiresAuth: true,
+                fromJson: (json) {
+                  final List<dynamic> videoJson =
+                      (json['videos'] as List<dynamic>?) ?? [];
+                  return videoJson
+                      .map((v) => VideoModel.fromBackendJson(v))
+                      .toList();
+                },
+              ),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (snapshot.hasError ||
+                    !snapshot.hasData ||
+                    !snapshot.data!.isSuccess) {
+                  return const Center(child: Text('No hay novedades', style: TextStyle(color: Colors.grey)));
+                }
+
+                // Tomamos un máximo de 10 como límite prudente para scroll horizontal
+                final videos = snapshot.data!.data?.take(10).toList() ?? [];
+
+                if (videos.isEmpty) {
+                  return const Center(child: Text('No hay novedades disponibles', style: TextStyle(color: Colors.grey)));
+                }
+
+                return ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  itemCount: videos.length,
+                  itemBuilder: (context, index) {
+                    final video = videos[index];
+                    // Hacemos que la tarjeta ocupe el 65% del ancho de la pantalla actual
+                    // Así garantizamos que se vea bien en iPhone Mini, Pro Max, iPads o Androids.
+                    final screenWidth = MediaQuery.of(context).size.width;
+                    
+                    return GestureDetector(
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => SingleVideoScreen(video: video),
+                          ),
+                        );
+                      },
+                      child: Container(
+                        width: screenWidth * 0.65,
+                        margin: const EdgeInsets.symmetric(horizontal: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF1E293B), // Fondo oscuro de respaldo si no hay miniatura
+                          borderRadius: BorderRadius.circular(16),
+                          image: video.thumbnailUrl.isNotEmpty
+                              ? DecorationImage(
+                                  image: NetworkImage(video.thumbnailUrl),
+                                  fit: BoxFit.cover,
+                                  colorFilter: ColorFilter.mode(
+                                    Colors.black.withOpacity(0.3),
+                                    BlendMode.darken,
+                                  ),
+                                )
+                              : null,
+                        ),
+                        child: Stack(
+                          children: [
+                            // Badge NUEVO / TIPO DE CONTENIDO
+                            Positioned(
+                              top: 12,
+                              left: 12,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF003399),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  video.contentType == 'poll'
+                                      ? 'ENCUESTA'
+                                      : video.contentType == 'flashcard'
+                                          ? 'FLASHCARD'
+                                          : 'NUEVO',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            // Botón central dinámico desenfocado
+                            Center(
+                              child: Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.2),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(
+                                  video.contentType == 'poll'
+                                      ? Icons.poll_outlined
+                                      : video.contentType == 'flashcard'
+                                          ? Icons.style_outlined
+                                          : Icons.play_arrow_rounded,
+                                  color: Colors.white,
+                                  size: 32,
+                                ),
+                              ),
+                            ),
+                            // Info inferior
+                            Positioned(
+                              bottom: 12,
+                              left: 12,
+                              right: 12,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      const Icon(Icons.favorite,
+                                          color: Colors.white, size: 14),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        '${video.likes}',
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    video.title,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                      shadows: [
+                                        Shadow(
+                                          color: Colors.black54,
+                                          offset: Offset(0, 1),
+                                          blurRadius: 2,
+                                        )
+                                      ],
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }

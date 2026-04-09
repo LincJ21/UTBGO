@@ -34,7 +34,14 @@ func handleGetPopularRecommendations(c *gin.Context) {
 	nStr := c.DefaultQuery("n", "10")
 	n, _ := strconv.Atoi(nStr)
 
-	popularVideos, err := Repos.Videos.GetPopular(c.Request.Context(), n)
+	// Intentar obtener userID si está autenticado
+	var userID *int
+	if idVal, exists := c.Get("userID"); exists {
+		id := int(idVal.(float64))
+		userID = &id
+	}
+
+	popularVideos, err := Repos.Videos.GetPopular(c.Request.Context(), n, userID)
 	if err != nil {
 		Logger.Error("BD: Error al obtener populares", "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al obtener recomendaciones populares"})
@@ -50,7 +57,14 @@ func handleGetSimilarRecommendations(c *gin.Context) {
 	nStr := c.DefaultQuery("n", "10")
 	n, _ := strconv.Atoi(nStr)
 
-	similarVideos, err := Repos.Videos.GetSimilar(c.Request.Context(), contentID, n)
+	// Intentar obtener userID si está autenticado
+	var userID *int
+	if idVal, exists := c.Get("userID"); exists {
+		id := int(idVal.(float64))
+		userID = &id
+	}
+
+	similarVideos, err := Repos.Videos.GetSimilar(c.Request.Context(), contentID, n, userID)
 	if err != nil {
 		Logger.Error("BD: Error al obtener similares", "error", err, "id", contentID)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al obtener contenidos similares"})

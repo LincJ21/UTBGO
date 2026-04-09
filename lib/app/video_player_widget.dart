@@ -1,4 +1,4 @@
-
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
@@ -11,6 +11,10 @@ import 'notifications_screen.dart';
 import 'config/app_config.dart';
 import 'config/api_client.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'public_profile_screen.dart';
+import 'profile_screen.dart';
+import 'services/global_ui_service.dart';
 
 class VideoPlayerWidget extends StatefulWidget {
   final VideoModel video;
@@ -221,7 +225,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
                                   ? Icons.bookmark
                                   : Icons.bookmark_border,
                               color: Colors.white,
-                              text: '20',
+                              text: '',
                               onTap: _toggleBookmark,
                             ),
                             const SizedBox(height: 16),
@@ -374,11 +378,59 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
             const SizedBox(width: 10),
             // Nombre
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () async {
+                  if (widget.video.authorId == 0) return;
+                  
+                  final prefs = await SharedPreferences.getInstance();
+                  String userRole = prefs.getString('role') ?? 'estudiante';
+                  
+                  int myId = -1;
+                  final token = await const FlutterSecureStorage().read(key: 'jwt_token');
+                  if (token != null) {
+                    final parts = token.split('.');
+                    if (parts.length == 3) {
+                      try {
+                        String normalized = base64Url.normalize(parts[1]);
+                        String payloadStr = utf8.decode(base64Url.decode(normalized));
+                        Map<String, dynamic> payload = jsonDecode(payloadStr);
+                        if (payload.containsKey('user_id')) {
+                          myId = (payload['user_id'] as num).toInt();
+                        }
+                        if (payload.containsKey('role')) {
+                          userRole = payload['role'].toString();
+                        }
+                      } catch (_) {}
+                    }
+                  }
+                  
+                  // Evita que los aspirantes interactúen con la red social por políticas
+                  if (userRole == 'aspirante') return;
+
+                  if (context.mounted) {
+                    if (myId != null && myId == widget.video.authorId) {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => Scaffold(body: ProfileScreen(onLogout: GlobalUIService.forceLogout)),
+                        ),
+                      );
+                    } else {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => PublicProfileScreen(authorId: widget.video.authorId),
+                        ),
+                      );
+                    }
+                  }
+                },
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
                       Text(
                         widget.video.authorName.isNotEmpty ? widget.video.authorName : 'Usuario',
                         style: const TextStyle(
@@ -419,7 +471,8 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
                 ],
               ),
             ),
-          ],
+          ),
+        ],
         ),
       ],
     );

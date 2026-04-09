@@ -12,16 +12,18 @@ import (
 // Estos valores corresponden a tipos_usuario.nivel_acceso en la BD.
 const (
 	AccessLevelStudent   = 1  // Estudiante (usuario regular)
+	AccessLevelProfessor = 3  // Profesor (puede subir contenido)
 	AccessLevelModerator = 5  // Moderador (puede moderar contenido)
 	AccessLevelAdmin     = 10 // Administrador (acceso total)
 )
 
-// AdminMiddleware verifica que el usuario autenticado tenga permisos de administrador.
+// AdminMiddleware verifica que el usuario autenticado tenga permisos de administrador o superior.
 // Requiere que AuthMiddleware() se ejecute antes (para que userID esté en el contexto).
 // Consulta tipos_usuario.nivel_acceso para verificar el rol.
 //
 // Niveles de acceso:
 //   - 1: Estudiante (sin acceso admin)
+//   - 3: Profesor (puede subir contenido)
 //   - 5: Moderador (acceso parcial)
 //   - 10: Administrador (acceso total)
 func AdminMiddleware(minAccessLevel int) gin.HandlerFunc {
@@ -82,6 +84,11 @@ func RequireAdmin() gin.HandlerFunc {
 // RequireModerator es un shortcut para AdminMiddleware con nivel de acceso de moderador (5).
 func RequireModerator() gin.HandlerFunc {
 	return AdminMiddleware(AccessLevelModerator)
+}
+
+// RequireProfessor es un shortcut para AdminMiddleware con nivel de acceso de profesor (3).
+func RequireProfessor() gin.HandlerFunc {
+	return AdminMiddleware(AccessLevelProfessor)
 }
 
 // SelfOrAdminMiddleware permite que un usuario acceda a su propio recurso O que un admin acceda a cualquiera.

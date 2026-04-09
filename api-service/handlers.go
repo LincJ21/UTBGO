@@ -200,6 +200,140 @@ func handleVerifyToken(c *gin.Context) {
 // handleLogin ELIMINADO: era código muerto con auth bypass (userID=1 hardcodeado).
 // Usar handleLoginV2 en /api/v1/auth/login para login seguro con bcrypt.
 
+func handleGetMyPublications(c *gin.Context) {
+	userIDVal, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "No autenticado"})
+		return
+	}
+	userID := int(userIDVal.(float64))
+
+	videos, err := Repos.Videos.GetByAuthor(c.Request.Context(), userID, &userID)
+	if err != nil {
+		Logger.Error("Error al obtener publicaciones del autor", "error", err, "author_id", userID)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Fallo al cargar las publicaciones"})
+		return
+	}
+
+	if videos == nil {
+		videos = []Video{}
+	}
+	c.JSON(http.StatusOK, videos)
+}
+
+func handleGetPublicProfile(c *gin.Context) {
+	// Obtenemos el userID del contexto ("Requester")
+	requesterIDVal, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "No autenticado"})
+		return
+	}
+	requesterID := int(requesterIDVal.(float64))
+
+	// Obtenemos el userID que quiere visitar ("Target")
+	targetIDStr := c.Param("id")
+	targetID, err := strconv.Atoi(targetIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ID de usuario inválido"})
+		return
+	}
+
+	// 1. Obtener información del Target
+	targetProfile, err := Repos.Profiles.GetPublicProfile(c.Request.Context(), targetID)
+	if err != nil {
+		Logger.Error("Error al obtener perfil público", "error", err, "target_id", targetID)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Falló al cargar perfil target"})
+		return
+	}
+	if targetProfile == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Perfil no encontrado"})
+		return
+	}
+
+	// 2. Si son el mismo usuario, dejar pasar directamente
+	if requesterID == targetID {
+		c.JSON(http.StatusOK, targetProfile)
+		return
+	}
+
+	// 3. Obtener el Rol del Requester para la matriz de reglas
+	requesterUser, err := Repos.Users.FindByID(c.Request.Context(), requesterID)
+	if err != nil || requesterUser == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Usuario requiriente no válido"})
+		return
+	}
+	requesterRole := requesterUser.Role
+
+	// ==== Matriz de Reglas ====
+	// A: Admin lo puede ver todo
+	if requesterRole == "admin" {
+		c.JSON(http.StatusOK, targetProfile)
+		return
+	}
+
+	// B: Solo Admins ven a Admins
+	if targetProfile.Role == "admin" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "No tienes permisos corporativos para ver este perfil."})
+		return
+	}
+
+	// C: Aspirantes NO pueden ver Administradores (Regla B) ni Profesores. Dejaremos que no vean a nadie por si acaso excepto estudiantes si es que publican (por la lógica del negocio)
+	if requesterRole == "aspirante" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "No tienes permisos requeridos de estudiante o roles superiores para explorar la red."})
+		return
+	}
+
+	// D: Estudiantes y Profesores pueden ver Profesores y Estudiantes
+	c.JSON(http.StatusOK, targetProfile)
+}
+
+func handleGetPublicPublications(c *gin.Context) {
+	// Reutilizamos la misma matriz de seguridad básica que el perfil
+	requesterIDVal, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "No autenticado"})
+		return
+	}
+	requesterID := int(requesterIDVal.(float64))
+
+	targetIDStr := c.Param("id")
+	targetID, err := strconv.Atoi(targetIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ID de usuario inválido"})
+		return
+	}
+
+	requesterUser, err := Repos.Users.FindByID(c.Request.Context(), requesterID)
+	if err != nil || requesterUser == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Usuario requiriente no válido"})
+		return
+	}
+
+	if requesterUser.Role == "aspirante" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Aspirantes no pueden ver publicaciones de terceros."})
+		return
+	}
+
+	// Fetch target user 
+	targetUser, err := Repos.Users.FindByID(c.Request.Context(), targetID)
+	if targetUser != nil && targetUser.Role == "admin" && requesterUser.Role != "admin" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Sin acceso."})
+		return
+	}
+
+	videos, err := Repos.Videos.GetByAuthor(c.Request.Context(), targetID, &requesterID)
+	if err != nil {
+		Logger.Error("Error al obtener publicaciones publicas", "error", err, "target_id", targetID)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Fallo al cargar las publicaciones"})
+		return
+	}
+
+	if videos == nil {
+		videos = []Video{}
+	}
+	c.JSON(http.StatusOK, videos)
+}
+
 func handleGetProfile(c *gin.Context) {
 	// --- CAMBIO PARA PRUEBAS ---
 	// Obtenemos el userID del contexto, establecido por el AuthMiddleware.
@@ -666,12 +800,15 @@ func handleSearchVideos(c *gin.Context) {
 	// Preparamos el término de búsqueda para usar con ILIKE en SQL (case-insensitive)
 	searchQuery := "%" + strings.ToLower(query) + "%"
 
-	// Búsqueda real en la base de datos
+	// Búsqueda real en la base de datos con información de autor
 	rows, err := DB.QueryContext(c, `
 		SELECT 
 			c.id_contenido, c.titulo, c.descripcion, c.url_contenido, COALESCE(c.url_thumbnail, ''),
-			(SELECT COUNT(*) FROM interacciones WHERE id_contenido = c.id_contenido AND id_tipo_interaccion = $1) as likes
+			(SELECT COUNT(*) FROM interacciones WHERE id_contenido = c.id_contenido AND id_tipo_interaccion = $1) as likes,
+			COALESCE(p.nombre || ' ' || COALESCE(p.apellido, ''), 'Usuario UTB') as author_name,
+			c.id_autor
 		FROM contenidos c
+		LEFT JOIN perfiles p ON c.id_autor = p.id_usuario
 		WHERE c.id_estado_contenido = $2 
 		  AND (LOWER(c.titulo) LIKE $3 OR LOWER(c.descripcion) LIKE $3)
 		ORDER BY c.fecha_creacion DESC
@@ -687,15 +824,21 @@ func handleSearchVideos(c *gin.Context) {
 
 	var searchResults []gin.H
 	for rows.Next() {
-		var id int
-		var title, desc, url, thumb string
+		var id, authorID int
+		var title, desc, url, thumb, authorName string
 		var likes int
-		if err := rows.Scan(&id, &title, &desc, &url, &thumb, &likes); err != nil {
+		if err := rows.Scan(&id, &title, &desc, &url, &thumb, &likes, &authorName, &authorID); err != nil {
 			continue
 		}
 		searchResults = append(searchResults, gin.H{
-			"id": strconv.Itoa(id), "title": title, "description": desc,
-			"video_url": url, "thumbnail_url": thumb, "likes": likes,
+			"id": strconv.Itoa(id), 
+			"title": title, 
+			"description": desc,
+			"video_url": url, 
+			"thumbnail_url": thumb, 
+			"likes": likes,
+			"author_name": authorName,
+			"author_id": authorID,
 		})
 	}
 
@@ -717,18 +860,29 @@ func handleGetVideosFeed(c *gin.Context) {
 	limit := 10
 	offset := (page - 1) * limit
 
-	// Consulta SQL para obtener contenidos reales con su tipo
+	// Obtener userID si está autenticado para las banderas personalizadas
+	idForFlags := 0
+	if idVal, exists := c.Get("userID"); exists {
+		idForFlags = int(idVal.(float64))
+	}
+
+	// Consulta SQL para obtener contenidos reales con su tipo, autor e interacciones personales
 	rows, err := DB.QueryContext(c, `
 		SELECT 
 			c.id_contenido, c.titulo, COALESCE(c.descripcion, ''), c.url_contenido, COALESCE(c.url_thumbnail, ''),
 			tc.codigo as content_type,
-			(SELECT COUNT(*) FROM interacciones WHERE id_contenido = c.id_contenido AND id_tipo_interaccion = $1) as likes
+			(SELECT COUNT(*) FROM interacciones WHERE id_contenido = c.id_contenido AND id_tipo_interaccion = $1) as likes,
+			COALESCE(p.nombre || ' ' || COALESCE(p.apellido, ''), 'Usuario UTB') as author_name,
+			c.id_autor,
+			COALESCE((SELECT TRUE FROM interacciones WHERE id_usuario = $5 AND id_contenido = c.id_contenido AND id_tipo_interaccion = $1 LIMIT 1), FALSE) as is_liked,
+			COALESCE((SELECT TRUE FROM favoritos WHERE id_usuario = $5 AND id_contenido = c.id_contenido LIMIT 1), FALSE) as is_bookmarked
 		FROM contenidos c
 		JOIN tipos_contenido tc ON c.id_tipo_contenido = tc.id_tipo_contenido
+		LEFT JOIN perfiles p ON c.id_autor = p.id_usuario
 		WHERE c.id_estado_contenido = $2
 		ORDER BY c.fecha_creacion DESC
 		LIMIT $3 OFFSET $4`,
-		likeInteractionTypeID, publishedContentStateID, limit, offset)
+		likeInteractionTypeID, publishedContentStateID, limit, offset, idForFlags)
 
 	if err != nil {
 		Logger.Error("Error al obtener feed", "error", err)
@@ -740,14 +894,26 @@ func handleGetVideosFeed(c *gin.Context) {
 	var videosForResponse []gin.H
 
 	for rows.Next() {
-		var id int
-		var title, desc, url, thumb, contentType string
+		var id, authorID int
+		var title, desc, url, thumb, contentType, authorName string
 		var likes int
-		if err := rows.Scan(&id, &title, &desc, &url, &thumb, &contentType, &likes); err != nil {
+		var isLiked, isBookmarked bool
+		if err := rows.Scan(&id, &title, &desc, &url, &thumb, &contentType, &likes, &authorName, &authorID, &isLiked, &isBookmarked); err != nil {
 			continue
 		}
 		videosForResponse = append(videosForResponse, gin.H{
-			"id": strconv.Itoa(id), "title": title, "description": desc, "video_url": url, "thumbnail_url": thumb, "content_type": contentType, "likes": likes, "comments": 0, "is_liked": false, "is_bookmarked": false,
+			"id": id, 
+			"title": title, 
+			"description": desc, 
+			"video_url": url, 
+			"thumbnail_url": thumb, 
+			"content_type": contentType, 
+			"likes": likes, 
+			"comments": 0, 
+			"is_liked": isLiked, 
+			"is_bookmarked": isBookmarked,
+			"author_name": authorName,
+			"author_id": authorID,
 		})
 	}
 
