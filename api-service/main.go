@@ -27,6 +27,7 @@ var imageContentTypeID int
 var publishedContentStateID int
 var likeInteractionTypeID int
 var bookmarkInteractionTypeID int
+var repostInteractionTypeID int
 var activeCommentStateID int
 
 // Gorse es el cliente global para el motor de recomendaciones.
@@ -315,6 +316,15 @@ func main() {
 	}
 	Logger.Info("ID de tipo de interacción cargado", "tipo", "bookmark", "id", bookmarkInteractionTypeID)
 
+	err = DB.QueryRow("SELECT id_tipo_interaccion FROM tipos_interaccion WHERE codigo = $1", "repost").Scan(&repostInteractionTypeID)
+	if err != nil {
+		err = DB.QueryRow("INSERT INTO tipos_interaccion (codigo, nombre, descripcion, incrementa_contador) VALUES ('repost', 'Repost', 'El usuario reposteó este contenido', true) RETURNING id_tipo_interaccion").Scan(&repostInteractionTypeID)
+		if err != nil {
+			Logger.Warn("Error al crear tipo interacción 'repost'", "error", err)
+		}
+	}
+	Logger.Info("ID de tipo de interacción cargado", "tipo", "repost", "id", repostInteractionTypeID)
+
 	err = DB.QueryRow("SELECT id_estado_general FROM estados_general WHERE codigo = $1 AND tipo_entidad = 'comentario'", "activo").Scan(&activeCommentStateID)
 	if err != nil {
 		err = DB.QueryRow("INSERT INTO estados_general (codigo, nombre, descripcion, tipo_entidad) VALUES ('activo', 'Activo', 'Comentario visible', 'comentario') RETURNING id_estado_general").Scan(&activeCommentStateID)
@@ -435,6 +445,7 @@ func main() {
 		{
 			videos.POST("/:id/like", AuthMiddleware(), handleToggleLike)
 			videos.POST("/:id/bookmark", AuthMiddleware(), handleToggleBookmark)
+			videos.POST("/:id/repost", AuthMiddleware(), handleToggleRepost)
 			videos.GET("/:id/comments", handleGetComments)
 			videos.POST("/:id/comments", AuthMiddleware(), handleCreateComment) // Nueva ruta
 			videos.GET("/feed", handleGetVideosFeed)
@@ -445,6 +456,7 @@ func main() {
 		{
 			profile.GET("/me", AuthMiddleware(), handleGetProfile)
 			profile.POST("/avatar", AuthMiddleware(), handleUploadAvatar)
+			profile.GET("/reposts", AuthMiddleware(), handleGetReposts)
 		}
 	}
 
@@ -482,6 +494,7 @@ func main() {
 			videos.POST("/:id/view", AuthMiddleware(), handleRegisterView)
 			videos.POST("/:id/like", AuthMiddleware(), handleToggleLikeV2)
 			videos.POST("/:id/bookmark", AuthMiddleware(), handleToggleBookmarkV2)
+			videos.POST("/:id/repost", AuthMiddleware(), handleToggleRepost)
 			videos.GET("/:id/comments", handleGetCommentsV2)
 			videos.POST("/:id/comments", AuthMiddleware(), handleCreateCommentV2)
 		}
@@ -510,6 +523,7 @@ func main() {
 			profile.POST("/avatar", AuthMiddleware(), handleUploadAvatar)
 			profile.POST("/interests", AuthMiddleware(), handleUpdateInterestsV2)
 			profile.GET("/bookmarks", AuthMiddleware(), handleGetBookmarksV2)
+			profile.GET("/reposts", AuthMiddleware(), handleGetReposts)
 			profile.GET("/publications", AuthMiddleware(), handleGetMyPublications)
 			profile.GET("/public/:id", AuthMiddleware(), handleGetPublicProfile)
 			profile.GET("/public/:id/publications", AuthMiddleware(), handleGetPublicPublications)

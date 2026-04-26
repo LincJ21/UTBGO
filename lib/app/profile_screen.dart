@@ -15,6 +15,7 @@ import 'connections_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'video_model.dart';
 import 'single_video_screen.dart';
+
 /// [ProfileScreen] muestra el perfil del usuario con tabs de Stats y Publicaciones.
 class ProfileScreen extends StatefulWidget {
   final VoidCallback onLogout;
@@ -670,18 +671,85 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildRepostsTab(ProfileModel profile) {
-    return const Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.repeat, size: 48, color: Colors.grey),
-          SizedBox(height: 16),
-          Text(
-            'Aún no has reposteado nada',
-            style: TextStyle(color: Colors.grey, fontSize: 16),
+    return FutureBuilder<List<VideoModel>>(
+      future: _apiClient.get<List<VideoModel>>(
+        AppConfig.profileRepostsEndpoint,
+        requiresAuth: true,
+        fromJson: (json) {
+          final list = json as List<dynamic>;
+          return list.map((e) => VideoModel.fromBackendJson(e)).toList();
+        },
+      ).then((response) => (response.isSuccess && response.data != null) ? response.data! : []),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError || !snapshot.hasData || snapshot.data!.isEmpty) {
+          return const Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.repeat, size: 48, color: Colors.grey),
+                SizedBox(height: 16),
+                Text(
+                  'Aún no has reposteado nada',
+                  style: TextStyle(color: Colors.grey, fontSize: 16),
+                ),
+              ],
+            ),
+          );
+        }
+        
+        final videos = snapshot.data!;
+        return GridView.builder(
+          padding: const EdgeInsets.all(2),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 3,
+            crossAxisSpacing: 2,
+            mainAxisSpacing: 2,
+            childAspectRatio: 0.7,
           ),
-        ],
-      ),
+          itemCount: videos.length,
+          itemBuilder: (context, index) {
+            final video = videos[index];
+            return GestureDetector(
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => SingleVideoScreen(video: video),
+                  ),
+                );
+              },
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  video.thumbnailUrl.isNotEmpty
+                      ? Image.network(
+                          video.thumbnailUrl,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) => Container(color: Colors.grey[800], child: const Icon(Icons.error)),
+                        )
+                      : Container(color: Colors.grey[800], child: const Icon(Icons.video_library, color: Colors.white54)),
+                  Positioned(
+                    bottom: 4,
+                    left: 4,
+                    child: Row(
+                      children: [
+                        const Icon(Icons.play_arrow_outlined, color: Colors.white, size: 16),
+                        const SizedBox(width: 2),
+                        Text(
+                          '${video.views}',
+                          style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
     );
   }
 

@@ -99,6 +99,7 @@ type Video struct {
 	Comments     int       `json:"comments"`
 	IsLiked      bool      `json:"is_liked"`
 	IsBookmarked bool      `json:"is_bookmarked"`
+	IsReposted   bool      `json:"is_reposted"`
 	CreatedAt    time.Time `json:"created_at"`
 	ContentType  string    `json:"content_type"`
 	Category     string    `json:"category"`

@@ -748,6 +748,139 @@ func handleToggleBookmark(c *gin.Context) {
 	})
 }
 
+// handleToggleRepost maneja el toggle de repost en un video
+func handleToggleRepost(c *gin.Context) {
+	userIDVal, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+	userID := int(userIDVal.(float64))
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+
+	// Validar rol de aspirante
+	user, err := Repos.Admin.GetUserByID(ctx, userID)
+	if err != nil || user == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error verificando rol de usuario"})
+		return
+	}
+	if user.RoleCode == "aspirante" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Los aspirantes no pueden repostear contenido"})
+		return
+	}
+
+	videoIDStr := c.Param("id")
+	videoID, err := strconv.Atoi(videoIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ID de video inválido"})
+		return
+	}
+
+	// Verificar si ya existe el repost en la base de datos
+	var interactionID int
+	err = DB.QueryRowContext(ctx, "SELECT id_interaccion FROM interacciones WHERE id_usuario = $1 AND id_contenido = $2 AND id_tipo_interaccion = $3", userID, videoID, repostInteractionTypeID).Scan(&interactionID)
+
+	isReposted := false
+	if err == sql.ErrNoRows {
+		// No existe, crear repost
+		_, err = DB.ExecContext(ctx, "INSERT INTO interacciones (id_usuario, id_contenido, id_tipo_interaccion) VALUES ($1, $2, $3)", userID, videoID, repostInteractionTypeID)
+		if err != nil {
+			Logger.Error("Error al dar repost", "error", err, "user_id", userID, "video_id", videoID)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al procesar repost"})
+			return
+		}
+		isReposted = true
+	} else if err == nil {
+		// Existe, eliminar repost
+		_, err = DB.ExecContext(ctx, "DELETE FROM interacciones WHERE id_interaccion = $1", interactionID)
+		if err != nil {
+			Logger.Error("Error al quitar repost", "error", err, "user_id", userID, "video_id", videoID)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al procesar repost"})
+			return
+		}
+		isReposted = false
+	} else {
+		Logger.Error("Error al consultar interacción repost", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error de base de datos"})
+		return
+	}
+
+	// Invalidar caché del perfil si estuviera
+	if Cache != nil {
+		Cache.InvalidateProfile(ctx, userID)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"id":         videoIDStr,
+		"isReposted": isReposted,
+	})
+}
+
+// handleGetReposts devuelve los videos reposteados por el usuario
+func handleGetReposts(c *gin.Context) {
+	userIDVal, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+	userID := int(userIDVal.(float64))
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
+	defer cancel()
+
+	limit := 20
+	offset := 0
+
+	query := `
+		SELECT 
+			c.id_contenido, c.titulo, COALESCE(c.descripcion, ''), c.url_contenido, COALESCE(c.url_thumbnail, ''), 
+			tc.codigo as content_type,
+			COALESCE(p.nombre || ' ' || COALESCE(p.apellido, ''), 'Usuario UTB') as author_name,
+			c.id_autor,
+			COALESCE((SELECT TRUE FROM interacciones WHERE id_usuario = $1 AND id_contenido = c.id_contenido AND id_tipo_interaccion = $3 LIMIT 1), FALSE) as is_liked,
+			COALESCE((SELECT TRUE FROM favoritos WHERE id_usuario = $1 AND id_contenido = c.id_contenido LIMIT 1), FALSE) as is_bookmarked,
+			TRUE as is_reposted
+		FROM interacciones i
+		JOIN contenidos c ON i.id_contenido = c.id_contenido
+		JOIN tipos_contenido tc ON c.id_tipo_contenido = tc.id_tipo_contenido
+		LEFT JOIN perfiles p ON c.id_autor = p.id_usuario
+		WHERE i.id_usuario = $1 AND i.id_tipo_interaccion = $2 AND c.id_estado_contenido = $4
+		ORDER BY i.fecha_creacion DESC
+		LIMIT $5 OFFSET $6
+	`
+	rows, err := DB.QueryContext(ctx, query, userID, repostInteractionTypeID, likeInteractionTypeID, publishedContentStateID, limit, offset)
+	if err != nil {
+		Logger.Error("Error listando reposts", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al obtener reposts"})
+		return
+	}
+	defer rows.Close()
+
+	var videos []Video
+	for rows.Next() {
+		var v Video
+		var contentType string
+		err := rows.Scan(
+			&v.ID, &v.Title, &v.Description, &v.VideoURL, &v.ThumbnailURL,
+			&contentType, &v.AuthorName, &v.AuthorID,
+			&v.IsLiked, &v.IsBookmarked, &v.IsReposted,
+		)
+		if err != nil {
+			Logger.Warn("Error escaneando repost", "error", err)
+			continue
+		}
+		videos = append(videos, v)
+	}
+
+	if videos == nil {
+		videos = []Video{}
+	}
+
+	c.JSON(http.StatusOK, videos)
+}
+
 func handleGetComments(c *gin.Context) {
 	videoIDStr := c.Param("id")
 	videoID, err := strconv.Atoi(videoIDStr)

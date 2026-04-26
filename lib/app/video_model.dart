@@ -14,6 +14,7 @@ class VideoModel {
   int views;
   bool isLiked;
   bool isBookmarked;
+  bool isReposted;
 
   VideoModel({
     required this.id,
@@ -32,6 +33,7 @@ class VideoModel {
     this.views = 0,
     this.isLiked = false,
     this.isBookmarked = false,
+    this.isReposted = false,
   });
 
   /// Convierte la instancia a un mapa JSON para almacenamiento local o caché.
@@ -52,6 +54,7 @@ class VideoModel {
       'views': views,
       'isLiked': isLiked,
       'isBookmarked': isBookmarked,
+      'isReposted': isReposted,
     };
   }
 
@@ -75,6 +78,7 @@ class VideoModel {
       views: json['views'] ?? 0,
       isLiked: json['isLiked'] ?? false,
       isBookmarked: json['isBookmarked'] ?? false,
+      isReposted: json['isReposted'] ?? false,
     );
   }
 
@@ -98,6 +102,7 @@ class VideoModel {
       views: json['views'] ?? 0,
       isLiked: json['is_liked'] ?? false,
       isBookmarked: json['is_bookmarked'] ?? false,
+      isReposted: json['is_reposted'] ?? false,
     );
   }
 

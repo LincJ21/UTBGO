@@ -80,6 +80,7 @@ class AppConfig {
   static String get profileMeEndpoint => '$profileEndpoint/me';
   static String get profileAvatarEndpoint => '$profileEndpoint/avatar';
   static String get profileBookmarksEndpoint => '$profileEndpoint/bookmarks';
+  static String get profileRepostsEndpoint => '$profileEndpoint/reposts';
   static String get profilePublicationsEndpoint => '$profileEndpoint/publications';
   
   static String publicProfileEndpoint(int id) => '$profileEndpoint/public/$id';
@@ -95,6 +96,10 @@ class AppConfig {
   /// Genera URL para bookmark de un video.
   static String videoBookmarkUrl(String videoId) =>
       '$videosEndpoint/$videoId/bookmark';
+
+  /// Genera URL para repost de un video.
+  static String videoRepostUrl(String videoId) =>
+      '$videosEndpoint/$videoId/repost';
 
   /// Genera URL para comentarios de un video.
   static String videoCommentsUrl(String videoId) =>

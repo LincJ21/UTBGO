@@ -98,6 +98,38 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
     }
   }
 
+  Future<void> _toggleRepost() async {
+    final prefs = await SharedPreferences.getInstance();
+    final role = prefs.getString('role') ?? '';
+    
+    if (role == 'aspirante') {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Los aspirantes no pueden repostear contenido. ¡Inscríbete para disfrutar de todas las funciones!'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+      return;
+    }
+
+    final wasReposted = widget.video.isReposted;
+    setState(() => widget.video.isReposted = !widget.video.isReposted);
+
+    final response = await _apiClient.post(
+      AppConfig.videoRepostUrl(widget.video.id),
+      requiresAuth: true,
+    );
+
+    if (!response.isSuccess && mounted) {
+      setState(() => widget.video.isReposted = wasReposted);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Error al procesar repost')),
+      );
+    }
+  }
+
   void _shareVideo() {
     final title = widget.video.title.isNotEmpty ? widget.video.title : 'este video';
     final shareText = '¡Mira $title en UTBGO! \n\nhttps://utbgo.app/video/${widget.video.id}';
@@ -254,6 +286,13 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
                               color: Colors.white,
                               text: '',
                               onTap: _toggleBookmark,
+                            ),
+                            const SizedBox(height: 16),
+                            _actionButton(
+                              icon: Icons.repeat,
+                              color: widget.video.isReposted ? Colors.green : Colors.white,
+                              text: '',
+                              onTap: _toggleRepost,
                             ),
                             const SizedBox(height: 16),
                             _actionButton(
