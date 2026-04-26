@@ -11,6 +11,7 @@ import 'services/global_ui_service.dart';
 import 'settings_screen.dart';
 import 'edit_profile_screen.dart';
 import 'admin_panel_screen.dart';
+import 'connections_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'video_model.dart';
 import 'single_video_screen.dart';
@@ -159,6 +160,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       length: tabs.length,
       child: Scaffold(
         backgroundColor: Colors.white,
+        endDrawer: _buildRightDrawer(context, profile),
         floatingActionButton: profile.canUploadVideos
             ? FloatingActionButton(
                 onPressed: () => Navigator.of(context).push(
@@ -228,59 +230,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
 
-                                  PopupMenuButton<String>(
-                                    icon: const Icon(Icons.menu,
-                                        color: Colors.white, size: 28),
-                                    onSelected: (value) {
-                                      if (value == 'admin_panel') {
-                                        Navigator.of(context).push(
-                                          MaterialPageRoute(
-                                            builder: (_) => const AdminPanelScreen(),
-                                          ),
-                                        );
-                                      } else if (value == 'settings') {
-                                        Navigator.of(context).push(
-                                          MaterialPageRoute(
-                                            builder: (_) => SettingsScreen(onLogout: widget.onLogout),
-                                          ),
-                                        );
-                                      } else if (value == 'logout') {
-                                        widget.onLogout();
-                                      }
-                                    },
-                                    itemBuilder: (context) => [
-                                      if (profile.role == 'admin' || profile.role == 'moderador')
-                                        const PopupMenuItem(
-                                          value: 'admin_panel',
-                                          child: Row(
-                                            children: [
-                                              Icon(Icons.admin_panel_settings, color: Colors.blueAccent),
-                                              SizedBox(width: 8),
-                                              Text('Panel Admin', style: TextStyle(fontWeight: FontWeight.bold)),
-                                            ],
-                                          ),
-                                        ),
-                                      const PopupMenuItem(
-                                        value: 'settings',
-                                        child: Row(
-                                          children: [
-                                            Icon(Icons.settings, color: Colors.black54),
-                                            SizedBox(width: 8),
-                                            Text('Configuración'),
-                                          ],
-                                        ),
-                                      ),
-                                      const PopupMenuItem(
-                                        value: 'logout',
-                                        child: Row(
-                                          children: [
-                                            Icon(Icons.logout, color: Colors.red),
-                                            SizedBox(width: 8),
-                                            Text('Cerrar Sesión'),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
+                                  Builder(
+                                    builder: (innerContext) => IconButton(
+                                      icon: const Icon(Icons.menu, color: Colors.white, size: 28),
+                                      onPressed: () {
+                                        Scaffold.of(innerContext).openEndDrawer();
+                                      },
+                                    ),
                                   ),
                                 ],
                               ),
@@ -494,10 +450,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
             children: [
               Expanded(
                   child: _statCard(
-                      Icons.article, '12', 'Publicaciones', Colors.blue)),
+                      Icons.video_library, profile.totalVideos.toString(), 'Publicaciones', Colors.blue)),
               const SizedBox(width: 16),
               Expanded(
-                  child: _statCard(Icons.people, '1.2k', 'Seguidores',
+                  child: _statCard(Icons.people, profile.followers.toString(), 'Seguidores',
                       Colors.deepPurple)),
             ],
           ),
@@ -506,11 +462,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
             children: [
               Expanded(
                   child: _statCard(
-                      Icons.trending_up, '85%', 'Accuracy', Colors.green)),
+                      Icons.favorite, profile.totalLikes.toString(), 'Me gustas', Colors.pink)),
               const SizedBox(width: 16),
               Expanded(
                   child:
-                      _statCard(Icons.star, 'Lvl 5', 'Progreso', Colors.orange)),
+                      _statCard(Icons.visibility, profile.totalViews.toString(), 'Visualizaciones', Colors.orange)),
             ],
           ),
         ],
@@ -826,6 +782,126 @@ class _ProfileScreenState extends State<ProfileScreen> {
           },
         );
       },
+    );
+  }
+
+  Widget _buildRightDrawer(BuildContext context, ProfileModel profile) {
+    return Drawer(
+      child: Container(
+        color: Colors.white,
+        child: ListView(
+          padding: EdgeInsets.zero,
+          children: [
+            DrawerHeader(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    Color(0xFF001F60),
+                    Color(0xFF003399),
+                    Color(0xFF0044CC),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+              ),
+              child: Stack(
+                children: [
+                  Positioned(
+                    bottom: 0,
+                    left: 0,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        CircleAvatar(
+                          radius: 26,
+                          backgroundColor: Colors.white24,
+                          backgroundImage: profile.avatarUrl.isNotEmpty ? NetworkImage(profile.avatarUrl) : null,
+                          child: profile.avatarUrl.isEmpty
+                              ? Text(
+                                  profile.username.isNotEmpty ? profile.username[0].toUpperCase() : 'U',
+                                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
+                                )
+                              : null,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          profile.username,
+                          style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          profile.role.isNotEmpty ? '${profile.role[0].toUpperCase()}${profile.role.substring(1)}' : '',
+                          style: const TextStyle(color: Colors.white70, fontSize: 13),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Positioned(
+                    top: -10,
+                    right: -10,
+                    child: IconButton(
+                      icon: const Icon(Icons.close, color: Colors.white),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  )
+                ],
+              ),
+            ),
+            if (profile.role == 'admin' || profile.role == 'moderador')
+              ListTile(
+                leading: const Icon(Icons.admin_panel_settings, color: Color(0xFF0044CC), size: 28),
+                title: const Text('Panel de Administración', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                subtitle: const Text('Gestionar contenido y usuarios'),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AdminPanelScreen()));
+                },
+              ),
+            if (profile.role == 'admin' || profile.role == 'moderador')
+              const Divider(),
+            ListTile(
+              leading: const Icon(Icons.settings_outlined, color: Colors.black87, size: 28),
+              title: const Text('Configuración', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
+              subtitle: const Text('Privacidad y notificaciones'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.of(context).push(MaterialPageRoute(builder: (_) => SettingsScreen(onLogout: widget.onLogout)));
+              },
+            ),
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.people_outline, color: Colors.black87, size: 28),
+              title: const Text('Mis Conexiones', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
+              subtitle: const Text('Seguidores y seguidos'),
+              onTap: () {
+                Navigator.pop(context);
+                final parsedId = int.tryParse(profile.id) ?? 0;
+                Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => ConnectionsScreen(userId: parsedId, username: profile.username),
+                ));
+              },
+            ),
+            const SizedBox(height: 10),
+            ListTile(
+              leading: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.red.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.logout, color: Colors.red, size: 24),
+              ),
+              title: const Text('Cerrar Sesión', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 16)),
+              onTap: () {
+                Navigator.pop(context);
+                widget.onLogout();
+              },
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

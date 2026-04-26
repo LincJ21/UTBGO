@@ -7,6 +7,7 @@ class VideoModel {
   final String authorName;
   final int authorId;
   final String contentType;
+  final String category;
   final DateTime createdAt;
   int likes;
   int comments;
@@ -23,6 +24,7 @@ class VideoModel {
     this.authorName = 'Profesor UTB',
     this.authorId = 0,
     this.contentType = 'video',
+    this.category = 'General',
     required this.createdAt,
     // Valores iniciales
     required this.likes,
@@ -43,6 +45,7 @@ class VideoModel {
       'author_name': authorName,
       'author_id': authorId,
       'content_type': contentType,
+      'category': category,
       'created_at': createdAt.toIso8601String(),
       'likes': likes,
       'comments': comments,
@@ -63,6 +66,7 @@ class VideoModel {
       authorName: json['author_name'] ?? 'Profesor UTB',
       authorId: json['author_id'] != null ? int.tryParse(json['author_id'].toString()) ?? 0 : 0,
       contentType: json['content_type'] ?? 'video',
+      category: json['category'] ?? 'General',
       createdAt: json['created_at'] != null 
           ? DateTime.tryParse(json['created_at']) ?? DateTime.now()
           : DateTime.now(),
@@ -85,6 +89,7 @@ class VideoModel {
       authorName: json['author_name'] ?? 'Profesor UTB',
       authorId: json['author_id'] is int ? json['author_id'] : int.tryParse(json['author_id']?.toString() ?? '0') ?? 0,
       contentType: json['content_type'] ?? 'video',
+      category: json['category'] ?? 'General',
       createdAt: json['created_at'] != null
           ? DateTime.tryParse(json['created_at']) ?? DateTime.now()
           : DateTime.now(),

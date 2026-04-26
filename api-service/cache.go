@@ -119,6 +119,13 @@ func (cs *CacheService) Delete(ctx context.Context, keys ...string) error {
 	return cs.client.Del(ctx, keys...).Err()
 }
 
+// SetNX guarda un valor solo si la clave NO existe (atómico).
+// Retorna true si la clave fue creada, false si ya existía.
+// Útil para debounce y rate limiting por clave.
+func (cs *CacheService) SetNX(ctx context.Context, key string, value interface{}, ttl time.Duration) (bool, error) {
+	return cs.client.SetNX(ctx, key, value, ttl).Result()
+}
+
 // DeleteByPattern elimina todas las claves que coincidan con un patrón.
 // Usa SCAN para no bloquear Redis (a diferencia de KEYS).
 // Ejemplo: DeleteByPattern(ctx, "feed:*") elimina todo el caché de feed.

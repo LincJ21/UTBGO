@@ -34,7 +34,12 @@ var activeCommentStateID int
 // var Gorse *GorseClientWrapper
 
 // MLRecommend es el cliente global para el nuevo sistema ML de recomendaciones
-var MLRecommend *CustomRecommendationClient
+// RecommendationEngine define la interfaz estándar para obtener recomendaciones
+type RecommendationEngine interface {
+	GetRecommendations(ctx context.Context, userID int, limit int) ([]int, error)
+}
+
+var MLRecommend RecommendationEngine
 
 // GlobalRoleMapper es el mapeador de roles global, usado en autenticación
 var GlobalRoleMapper *RoleMapper
@@ -73,6 +78,12 @@ func AuthMiddleware() gin.HandlerFunc {
 		}
 
 		if claims, ok := token.Claims.(jwt.MapClaims); ok {
+			if _, ok := claims["exp"]; !ok {
+				Logger.Warn("Token JWT sin claim 'exp'")
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "Token missing expiration claim"})
+				c.Abort()
+				return
+			}
 			userID, ok := claims["user_id"].(float64)
 			if !ok {
 				c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token claims"})
@@ -111,8 +122,10 @@ func OptionalAuthMiddleware() gin.HandlerFunc {
 
 		if err == nil && token.Valid {
 			if claims, ok := token.Claims.(jwt.MapClaims); ok {
-				if userID, ok := claims["user_id"].(float64); ok {
-					c.Set("userID", userID)
+				if _, hasExp := claims["exp"]; hasExp {
+					if userID, ok := claims["user_id"].(float64); ok {
+						c.Set("userID", userID)
+					}
 				}
 			}
 		}
@@ -193,8 +206,8 @@ func main() {
 	// Cargar variables de entorno desde el archivo .env
 	// En producción (Render, Railway, etc.) las variables vienen del sistema,
 	// así que no importa si .env no existe.
-	_ = godotenv.Load("../../.env") // Desarrollo: ruta relativa del proyecto Flutter
-	_ = godotenv.Load(".env")       // Producción/Docker: .env en el mismo directorio
+	_ = godotenv.Load("../.env")   // Desarrollo: .env en la raíz del monorepo UTBGO
+	_ = godotenv.Load(".env")      // Producción/Docker: .env en el mismo directorio
 	// Si ninguno existe, usa variables de entorno del sistema (lo normal en la nube)
 
 	// HAL-005: Advertencia de seguridad si se ejecuta en modo debug
@@ -334,15 +347,18 @@ func main() {
 	}
 
 	// --- Inicialización de Gorse (Recomendaciones) ---
-	// Gorse = NewGorseClient(os.Getenv("GORSE_SERVER_URL"), os.Getenv("GORSE_API_KEY"))
-	// if Gorse != nil {
-	// 	Logger.Info("Cliente Gorse inicializado")
-	// }
-
-	// --- Inicialización de Custom Python Recomendaciones ---
-	MLRecommend = NewCustomRecommendationClient(os.Getenv("RECOMMENDATIONS_SERVICE_URL"), os.Getenv("RECOMMENDATIONS_API_KEY"))
-	if MLRecommend != nil {
-		Logger.Info("Cliente ML Recommendations inicializado")
+	// --- Inicialización del Motor de Recomendaciones (Patrón Estrategia) ---
+	engineType := strings.ToLower(os.Getenv("PRIMARY_RECOMMENDATION_ENGINE"))
+	if engineType == "gorse" {
+		MLRecommend = NewGorseClient(os.Getenv("GORSE_SERVER_URL"), os.Getenv("GORSE_API_KEY"))
+		if MLRecommend != nil {
+			Logger.Info("Motor de Recomendaciones: GORSE (Enterprise Fallback)")
+		}
+	} else {
+		MLRecommend = NewCustomRecommendationClient(os.Getenv("RECOMMENDATIONS_SERVICE_URL"), os.Getenv("RECOMMENDATIONS_API_KEY"))
+		if MLRecommend != nil {
+			Logger.Info("Motor de Recomendaciones: CUSTOM ML (Python)")
+		}
 	}
 
 	router := gin.Default()
@@ -463,6 +479,7 @@ func main() {
 			videos.GET("/feed", OptionalAuthMiddleware(), handleGetFeedV2)
 			videos.GET("/search", handleSearchV2)
 			videos.POST("/upload", AuthMiddleware(), RequireProfessor(), handleUploadVideoV2)
+			videos.POST("/:id/view", AuthMiddleware(), handleRegisterView)
 			videos.POST("/:id/like", AuthMiddleware(), handleToggleLikeV2)
 			videos.POST("/:id/bookmark", AuthMiddleware(), handleToggleBookmarkV2)
 			videos.GET("/:id/comments", handleGetCommentsV2)
@@ -483,6 +500,8 @@ func main() {
 			recommend.GET("/similar/:id", handleGetSimilarRecommendations)
 		}
 
+
+
 		// Perfil
 		profile := v1.Group("/profile")
 		{
@@ -494,6 +513,9 @@ func main() {
 			profile.GET("/publications", AuthMiddleware(), handleGetMyPublications)
 			profile.GET("/public/:id", AuthMiddleware(), handleGetPublicProfile)
 			profile.GET("/public/:id/publications", AuthMiddleware(), handleGetPublicPublications)
+			profile.POST("/public/:id/follow", AuthMiddleware(), handleFollowUser)
+			profile.DELETE("/public/:id/follow", AuthMiddleware(), handleUnfollowUser)
+			profile.GET("/public/:id/connections", AuthMiddleware(), handleGetConnections)
 		}
 
 		// --- Flashcards ---
@@ -531,6 +553,9 @@ func main() {
 		{
 			// Dashboard — Moderador (5+)
 			admin.GET("/dashboard", RequireModerator(), handleAdminDashboard)
+
+			// Entrenar IA (Moderador 5+ o Profesor)
+			admin.POST("/retrain", RequireModerator(), handleTriggerRetrain)
 
 			// Gestión de Usuarios
 			adminUsers := admin.Group("/users")

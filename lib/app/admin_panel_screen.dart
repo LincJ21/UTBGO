@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'admin_api_service.dart';
 import 'admin_models.dart';
 import 'config/api_client.dart';
-
+import 'config/app_config.dart';
+import 'package:http/http.dart' as http;
+import 'package:flutter_secure_storage/flutter_secure_storage.dart' as flutter_secure_storage;
 class AdminPanelScreen extends StatefulWidget {
   const AdminPanelScreen({super.key});
 
@@ -105,6 +107,40 @@ class _DashboardTabState extends State<_DashboardTab> {
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          // Sección de Inteligencia Artificial
+          const Text('Motor Predictivo', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          Card(
+            color: Colors.indigo.shade50,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  const Icon(Icons.psychology, size: 40, color: Colors.indigo),
+                  const SizedBox(width: 16),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Reentrenamiento LightGBM', style: TextStyle(fontWeight: FontWeight.bold)),
+                        Text('Generar nueva versión de recomendaciones.', style: TextStyle(fontSize: 12, color: Colors.black54)),
+                      ],
+                    ),
+                  ),
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(backgroundColor: Colors.indigo, foregroundColor: Colors.white),
+                    onPressed: _triggerRetraining,
+                    icon: const Icon(Icons.sync),
+                    label: const Text("Entrenar"),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
+
+          // Sección Usuarios
           const Text('Usuarios', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
           GridView.count(
@@ -160,6 +196,38 @@ class _DashboardTabState extends State<_DashboardTab> {
         ),
       ),
     );
+  }
+
+  Future<void> _triggerRetraining() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Reentrenar Módulo IA"),
+        content: const Text("Esta operación consumirá CPU en el servidor en segundo plano calculando nuevos pesos de Features para los usuarios. ¿Proceder?"),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("Cancelar")),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text("Iniciar Entrenamiento")),
+        ],
+      )
+    );
+
+    if (confirm != true) return;
+
+    try {
+      final storage = const flutter_secure_storage.FlutterSecureStorage();
+      final token = await storage.read(key: 'jwt_token');
+      final url = Uri.parse('${AppConfig.apiBaseUrl}/v1/admin/retrain');
+      
+      final response = await http.post(url, headers: {'Authorization': 'Bearer $token'});
+      
+      if (response.statusCode == 202) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Entrenamiento IA encolado correctamente"), backgroundColor: Colors.green));
+      } else {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Motor rechazó ejecución: STATUS ${response.statusCode}"), backgroundColor: Colors.red));
+      }
+    } catch(e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red));
+    }
   }
 }
 

@@ -20,8 +20,17 @@ type User struct {
 	CvlacURL     string    `json:"cvlac_url,omitempty"`
 	WebsiteURL   string    `json:"website_url,omitempty"`
 	PasswordHash string    `json:"-"` // Nunca serializar
-	CreatedAt    time.Time `json:"created_at"`
-	LastLogin    time.Time `json:"last_login,omitempty"`
+	CreatedAt          time.Time `json:"created_at"`
+	LastLogin          time.Time `json:"last_login,omitempty"`
+	
+	// Dashboard Stats
+	FollowersCount     int       `json:"followers"`
+	TotalLikesReceived int       `json:"total_likes"`
+	TotalViews         int       `json:"total_views"`
+	TotalVideos        int       `json:"total_videos"`
+
+	// Social Graph
+	IsFollowing bool `json:"is_following"`
 }
 
 // Profile representa el perfil de un usuario.
@@ -47,6 +56,22 @@ type PublicProfile struct {
 	WebsiteURL string    `json:"website_url,omitempty"`
 	Role       string    `json:"role"`
 	Interests  []string  `json:"interests,omitempty"`
+	IsFollowing bool     `json:"is_following"`
+}
+
+// ConnectionUser representa una vista minimalista de un usuario para las listas de seguidores/seguidos.
+type ConnectionUser struct {
+	UserID     int       `json:"user_id"`
+	Username   string    `json:"username"`
+	AvatarURL  string    `json:"avatar_url,omitempty"`
+	Role       string    `json:"role"`
+	IsFollowing bool     `json:"is_following"`
+}
+
+// ConnectionsResponse agrupa los seguidores y seguidos de un perfil.
+type ConnectionsResponse struct {
+	Followers []ConnectionUser `json:"followers"`
+	Following []ConnectionUser `json:"following"`
 }
 
 // UpdateProfileRequest representa los datos enviados para actualizar el perfil.
@@ -76,6 +101,7 @@ type Video struct {
 	IsBookmarked bool      `json:"is_bookmarked"`
 	CreatedAt    time.Time `json:"created_at"`
 	ContentType  string    `json:"content_type"`
+	Category     string    `json:"category"`
 }
 
 // Comment representa un comentario en un video.
@@ -263,7 +289,19 @@ type ProfileRepository interface {
 	UpdateAvatar(ctx context.Context, userID int, avatarURL string) error
 
 	// GetPublicProfile busca el perfil público de un usuario y lo acopla junto con su rol.
-	GetPublicProfile(ctx context.Context, userID int) (*PublicProfile, error)
+	GetPublicProfile(ctx context.Context, userID int, requestorID *int) (*PublicProfile, error)
+
+	// GetConnections devuelve las listas de seguidores y a quienes sigue un usuario
+	GetConnections(ctx context.Context, userID int, requestorID *int) (*ConnectionsResponse, error)
+
+	// GetUserStats calcula métricas del perfil (seguidores, likes, views, videos).
+	GetUserStats(ctx context.Context, userID int) (followers int, totalLikes int, totalViews int, totalVideos int, err error)
+
+	// FollowUser sigue a un usuario.
+	FollowUser(ctx context.Context, followerID, followedID int) error
+
+	// UnfollowUser deja de seguir a un usuario.
+	UnfollowUser(ctx context.Context, followerID, followedID int) error
 }
 
 // VideoRepository define las operaciones de persistencia para videos.
@@ -277,8 +315,8 @@ type VideoRepository interface {
 	// GetFeed obtiene videos para el feed con paginación.
 	GetFeed(ctx context.Context, limit, offset int, userID *int) ([]Video, error)
 
-	// Search busca videos por título o descripción.
-	Search(ctx context.Context, query string, limit int, userID *int) ([]Video, error)
+	// Search busca videos por título o descripción con filtros opcionales de fecha, autor y categoría.
+	Search(ctx context.Context, query string, dateFilter string, authorFilter string, categoryFilter string, limit int, userID *int) ([]Video, error)
 
 	// GetLikesCount obtiene el número de likes de un video.
 	GetLikesCount(ctx context.Context, videoID int) (int, error)

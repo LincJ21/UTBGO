@@ -109,7 +109,18 @@ class _FeedFlashcardWidgetState extends State<FeedFlashcardWidget> {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: Colors.black, // Fondo oscuro para el feed
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            Color(0xFF0F172A), // Slate 900
+            Color(0xFF001F60), // UTB Dark Blue
+            Color(0xFF0F172A),
+          ],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          stops: [0.0, 0.5, 1.0],
+        ),
+      ),
       child: Stack(
         children: [
           // Flashcard Central

@@ -1,7 +1,7 @@
 import logging
 import redis
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 
@@ -57,3 +57,28 @@ async def health_check(
         raise HTTPException(status_code=503, detail=health_status)
         
     return health_status
+
+@router.post("/internal/retrain", status_code=status.HTTP_202_ACCEPTED)
+async def trigger_retraining(background_tasks: BackgroundTasks):
+    """
+    Triggers the ML training pipeline asynchronously via Background Tasks.
+    Only accessible passing the RECOMMENDATIONS_API_KEY.
+    """
+    from app.services.training_service import TrainingService
+    
+    def run_training_job():
+        try:
+            logger.info("Initializing background training job...")
+            svc = TrainingService()
+            svc.train_model()
+            logger.info("Background training job finished.")
+        except Exception as e:
+            logger.error(f"Background training job failed: {e}")
+
+    background_tasks.add_task(run_training_job)
+    
+    return {
+        "status": "accepted",
+        "message": "Heavy ML Retraining pipeline queued successfully.",
+        "layer": "Recommendations"
+    }

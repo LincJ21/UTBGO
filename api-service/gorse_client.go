@@ -79,14 +79,15 @@ func (g *GorseClientWrapper) HideItem(ctx context.Context, contentID int) error 
 }
 
 // GetRecommendations obtiene recomendaciones personalizadas para un usuario.
-func (g *GorseClientWrapper) GetRecommendations(ctx context.Context, userID int, category string, n int) ([]int, error) {
+func (g *GorseClientWrapper) GetRecommendations(ctx context.Context, userID int, n int) ([]int, error) {
+	category := "" // Gorse soporta categoría vacía para "todas las categorías"
 	if g == nil {
 		return nil, fmt.Errorf("gorse client not initialized")
 	}
 
 	// Si no hay userID (invitado), pedir populares
 	if userID <= 0 {
-		return g.GetPopular(ctx, category, n)
+		return g.GetPopular(ctx, n)
 	}
 
 	res, err := g.client.GetRecommend(ctx, fmt.Sprintf("user_%d", userID), category, n, 0)
@@ -98,7 +99,8 @@ func (g *GorseClientWrapper) GetRecommendations(ctx context.Context, userID int,
 }
 
 // GetPopular obtiene los contenidos más populares (trending) vía API directa porque el SDK no lo tiene.
-func (g *GorseClientWrapper) GetPopular(ctx context.Context, category string, n int) ([]int, error) {
+func (g *GorseClientWrapper) GetPopular(ctx context.Context, n int) ([]int, error) {
+	category := ""
 	if g == nil {
 		return nil, fmt.Errorf("gorse client not initialized")
 	}

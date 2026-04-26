@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"html"
+	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -129,6 +131,10 @@ func (s *AuthService) ValidateToken(tokenString string) (jwt.MapClaims, error) {
 	}
 
 	if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
+		// Validar explícitamente que el token tiene fecha de expiración
+		if _, hasExp := claims["exp"]; !hasExp {
+			return nil, fmt.Errorf("token missing expiration claim")
+		}
 		return claims, nil
 	}
 
@@ -473,6 +479,46 @@ func handleUploadVideoV2(c *gin.Context) {
 	// pues lee directamente las features de contenido (y metadata) de la propia base de datos Postgres.
 }
 
+// handleRegisterView registra un evento de reproducción (view) para un video.
+// Protegido con debounce: máximo 1 view por usuario/video cada 30 segundos para evitar inflación artificial.
+func handleRegisterView(c *gin.Context) {
+	userID := getUserIDFromContext(c)
+	if userID == 0 {
+		RespondError(c, ErrUnauthorized())
+		return
+	}
+
+	videoID, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		RespondError(c, ErrInvalidInput("id", "ID de video inválido"))
+		return
+	}
+
+	// Debounce: si Redis está disponible, evitamos vistas duplicadas rápidas
+	if Cache != nil {
+		cacheKey := fmt.Sprintf("view_debounce:%d:%d", userID, videoID)
+		ctx := c.Request.Context()
+		// SetNX = "set if not exists", retorna true solo si la clave NO existía
+		wasSet, err := Cache.SetNX(ctx, cacheKey, "1", 30*time.Second)
+		if err == nil && !wasSet {
+			// Ya registramos una vista hace menos de 30s, ignorar silenciosamente
+			RespondSuccess(c, gin.H{"status": "debounced"})
+			return
+		}
+	}
+
+	// Responder inmediatamente al cliente (no bloquear)
+	RespondSuccess(c, gin.H{"status": "viewed"})
+
+	// Disparar tracking en background (asíncrono, no bloquea respuesta)
+	SendTrackingEvent(context.Background(), c.GetHeader("Authorization"), TrackingEvent{
+		UserID:    userID,
+		ContentID: videoID,
+		EventType: "view",
+		Metadata:  map[string]any{"source": "flutter_player"},
+	})
+}
+
 // handleToggleLikeV2 maneja likes usando repositorios.
 func handleToggleLikeV2(c *gin.Context) {
 	userID := getUserIDFromContext(c)
@@ -800,6 +846,7 @@ func handleGetFeedV2(c *gin.Context) {
 			"comments":      v.Comments,
 			"is_liked":      v.IsLiked,
 			"is_bookmarked": v.IsBookmarked,
+			"category":      v.Category,
 		})
 	}
 
@@ -833,6 +880,10 @@ func handleGetFeedV2(c *gin.Context) {
 // Usa caché Redis si está disponible (TTL: 2 min).
 func handleSearchV2(c *gin.Context) {
 	query := c.Query("q")
+	dateFilter := c.Query("date")
+	authorFilter := c.Query("author")
+	categoryFilter := c.Query("category")
+
 	if query == "" {
 		RespondError(c, ErrMissingField("q"))
 		return
@@ -843,9 +894,11 @@ func handleSearchV2(c *gin.Context) {
 		return
 	}
 
+	cacheKeyParams := fmt.Sprintf("%s|%s|%s|%s", query, dateFilter, authorFilter, categoryFilter)
+
 	// Intentar obtener del caché
 	if Cache != nil {
-		if cached, found := Cache.GetSearch(c.Request.Context(), query); found {
+		if cached, found := Cache.GetSearch(c.Request.Context(), cacheKeyParams); found {
 			RespondSuccess(c, cached)
 			return
 		}
@@ -857,7 +910,7 @@ func handleSearchV2(c *gin.Context) {
 		userID = &id
 	}
 
-	videos, err := Repos.Videos.Search(c.Request.Context(), query, 20, userID)
+	videos, err := Repos.Videos.Search(c.Request.Context(), query, dateFilter, authorFilter, categoryFilter, 20, userID)
 	if err != nil {
 		Logger.Error("Error en búsqueda", "error", err, "query", query)
 		RespondError(c, ErrDatabase("Error al buscar videos"))
@@ -878,6 +931,7 @@ func handleSearchV2(c *gin.Context) {
 			"likes":         v.Likes,
 			"is_liked":      v.IsLiked,
 			"is_bookmarked": v.IsBookmarked,
+			"category":      v.Category,
 		})
 	}
 
@@ -889,7 +943,7 @@ func handleSearchV2(c *gin.Context) {
 
 	// Guardar en caché
 	if Cache != nil {
-		Cache.SetSearch(c.Request.Context(), query, result)
+		Cache.SetSearch(c.Request.Context(), cacheKeyParams, result)
 	}
 
 	// --- Integración Tracking Service ---
@@ -899,7 +953,7 @@ func handleSearchV2(c *gin.Context) {
 			UserID:    uid,
 			ContentID: 0,
 			EventType: "search",
-			Metadata:  map[string]any{"query": query},
+			Metadata:  map[string]any{"query": query, "date": dateFilter, "author": authorFilter, "category": categoryFilter},
 		})
 	}
 
@@ -976,4 +1030,45 @@ func handleGetTrends(c *gin.Context) {
 	}
 	
 	RespondSuccess(c, gin.H{"trends": trends})
+}
+
+// handleTriggerRetrain contacta el microservicio de Python para entrenar el modelo ML.
+// Solo accesible por administradores.
+func handleTriggerRetrain(c *gin.Context) {
+	// Verificar que el usuario tenga rol
+	userID, exists := c.Get("userID")
+	if !exists {
+		RespondError(c, ErrUnauthorized())
+		return
+	}
+
+	recomURL := os.Getenv("RECOMMENDATIONS_SERVICE_URL")
+	if recomURL == "" {
+		recomURL = "http://recommendations:8090"
+	}
+	recomAPIKey := os.Getenv("RECOMMENDATIONS_API_KEY")
+
+	req, err := http.NewRequest("POST", recomURL+"/api/v1/internal/retrain", nil)
+	if err != nil {
+		RespondError(c, ErrInternal().WithDetails("Error interno creando petición"))
+		return
+	}
+	req.Header.Set("Authorization", "Bearer "+recomAPIKey)
+	req.Header.Set("x-api-key", recomAPIKey)
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		Logger.Error("Error contactando microservicio IA", "error", err)
+		RespondError(c, ErrInternal().WithDetails("El servidor de inteligencia artificial está inalcanzable"))
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+	    RespondError(c, NewAPIError(ErrCodeInternal, "El motor IA rechazó la orden de entrenamiento", resp.StatusCode))
+		return
+	}
+
+	RespondSuccess(c, gin.H{"message": "Entrenamiento neuronal en progreso", "actor_id": userID})
 }

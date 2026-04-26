@@ -8,6 +8,10 @@ class ProfileModel {
   final String? faculty;
   final String? cvlacUrl;
   final String? websiteUrl;
+  final int followers;
+  final int totalLikes;
+  final int totalViews;
+  final int totalVideos;
 
   ProfileModel({
     required this.id,
@@ -18,6 +22,10 @@ class ProfileModel {
     this.faculty,
     this.cvlacUrl,
     this.websiteUrl,
+    this.followers = 0,
+    this.totalLikes = 0,
+    this.totalViews = 0,
+    this.totalVideos = 0,
   });
 
   factory ProfileModel.fromJson(Map<String, dynamic> json) {
@@ -30,6 +38,10 @@ class ProfileModel {
       faculty: json['faculty'],
       cvlacUrl: json['cvlac_url'],
       websiteUrl: json['website_url'],
+      followers: json['followers'] ?? 0,
+      totalLikes: json['total_likes'] ?? 0,
+      totalViews: json['total_views'] ?? 0,
+      totalVideos: json['total_videos'] ?? 0,
     );
   }
 

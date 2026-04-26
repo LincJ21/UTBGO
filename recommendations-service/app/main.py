@@ -9,6 +9,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.api import routes
 from app.core.config import settings
 from app.core.logging import setup_logging
+from app.core.scheduler import start_scheduler, shutdown_scheduler
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -51,6 +52,18 @@ async def database_exception_handler(request: Request, exc: SQLAlchemyError):
         status_code=503,
         content={"type": "about:blank", "title": "Database Unavailable", "status": 503},
     )
+
+
+@app.on_event("startup")
+async def startup_event():
+    logger.info("Application startup: Triggering APScheduler setup")
+    start_scheduler()
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    logger.info("Application shutdown: Stopping APScheduler")
+    shutdown_scheduler()
 
 
 app.include_router(routes.router, prefix=settings.API_V1_STR)

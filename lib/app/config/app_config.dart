@@ -84,9 +84,13 @@ class AppConfig {
   
   static String publicProfileEndpoint(int id) => '$profileEndpoint/public/$id';
   static String publicProfilePublicationsEndpoint(int id) => '$profileEndpoint/public/$id/publications';
+  static String publicProfileFollowEndpoint(int id) => '$profileEndpoint/public/$id/follow';
 
   /// Genera URL para like de un video.
   static String videoLikeUrl(String videoId) => '$videosEndpoint/$videoId/like';
+
+  /// Genera URL para registrar una reproducción (view) de un video.
+  static String videoViewUrl(String videoId) => '$videosEndpoint/$videoId/view';
 
   /// Genera URL para bookmark de un video.
   static String videoBookmarkUrl(String videoId) =>

@@ -34,18 +34,20 @@ class _LoginScreenState extends State<LoginScreen> {
     serverClientId: AppConfig.googleWebClientId,
   );
 
-  late final AadOAuth _microsoftSignIn;
+  AadOAuth? _microsoftSignIn;
 
   @override
   void initState() {
     super.initState();
-    _microsoftSignIn = AadOAuth(Config(
-      tenant: AppConfig.azureTenantId,
-      clientId: AppConfig.azureClientId,
-      scope: "openid profile email offline_access",
-      redirectUri: AppConfig.azureRedirectUri,
-      navigatorKey: GlobalKey<NavigatorState>(), // No se usa si pasamos context
-    ));
+    if (AppConfig.isMicrosoftEnabled) {
+      _microsoftSignIn = AadOAuth(Config(
+        tenant: AppConfig.azureTenantId,
+        clientId: AppConfig.azureClientId,
+        scope: "openid profile email offline_access",
+        redirectUri: AppConfig.azureRedirectUri,
+        navigatorKey: GlobalKey<NavigatorState>(), // No se usa si pasamos context
+      ));
+    }
   }
 
   bool _isLoading = false;
@@ -279,8 +281,8 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _isLoading = true);
     try {
       // Iniciar flujo OAuth de Microsoft
-      await _microsoftSignIn.login();
-      final String? idToken = await _microsoftSignIn.getIdToken();
+      await _microsoftSignIn?.login();
+      final String? idToken = await _microsoftSignIn?.getIdToken();
 
       if (idToken == null) {
         debugPrint('Login Microsoft cancelado o fallido.');

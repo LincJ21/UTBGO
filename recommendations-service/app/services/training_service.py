@@ -1,7 +1,13 @@
+import logging
+from app.pipelines.training_pipeline import TrainingPipeline
+
+logger = logging.getLogger(__name__)
+
 class TrainingService:
     def __init__(self):
-        pass
+        self.pipeline = TrainingPipeline()
 
     def train_model(self):
-        # Placeholder for training logic
-        pass
+        logger.info("Triggering ML training pipeline...")
+        result = self.pipeline.run()
+        return result

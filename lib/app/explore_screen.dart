@@ -21,14 +21,15 @@ class _ExploreScreenState extends State<ExploreScreen> {
   late Future<List<VideoModel>> _popularVideosFuture;
   late Future<List<Map<String, dynamic>>> _trendsFuture;
 
-  // Categorías de exploración
+  // Categorías oficiales UTB (basadas en Escuelas y Direcciones)
   final List<Map<String, dynamic>> _categories = [
-    {'label': 'Todos', 'icon': Icons.explore},
-    {'label': 'Ingeniería', 'icon': Icons.engineering},
-    {'label': 'Ciencias', 'icon': Icons.science},
-    {'label': 'Negocios', 'icon': Icons.business_center},
-    {'label': 'Salud', 'icon': Icons.health_and_safety},
-    {'label': 'Diseño', 'icon': Icons.palette},
+    {'label': 'Todos', 'icon': Icons.explore, 'filter': ''},
+    {'label': 'Ingeniería', 'icon': Icons.engineering, 'filter': 'Ingeniería'},
+    {'label': 'Negocios', 'icon': Icons.business_center, 'filter': 'Negocios'},
+    {'label': 'Sociedad', 'icon': Icons.gavel, 'filter': 'Sociedad'},
+    {'label': 'Arquitectura', 'icon': Icons.palette, 'filter': 'Arquitectura'},
+    {'label': 'Ciencias Básicas', 'icon': Icons.science, 'filter': 'Ciencias Básicas'},
+    {'label': 'Vida UTB', 'icon': Icons.celebration, 'filter': 'Vida UTB'},
   ];
   int _selectedCategoryIndex = 0;
 
@@ -65,6 +66,30 @@ class _ExploreScreenState extends State<ExploreScreen> {
       return (response.data as List)
           .map((json) => VideoModel.fromBackendJson(json))
           .toList();
+    }
+    return [];
+  }
+
+  /// Obtiene videos filtrados por categoría desde el endpoint de búsqueda
+  Future<List<VideoModel>> _fetchVideosByCategory(String category) async {
+    final uri = Uri.parse(AppConfig.videosSearchEndpoint).replace(
+      queryParameters: {
+        'q': '*',
+        'category': category,
+      },
+    );
+
+    final response = await _apiClient.get<List<VideoModel>>(
+      uri.toString(),
+      requiresAuth: true,
+      fromJson: (json) {
+        final List<dynamic> videoJson = (json['videos'] as List<dynamic>?) ?? [];
+        return videoJson.map((v) => VideoModel.fromBackendJson(v)).toList();
+      },
+    );
+
+    if (response.isSuccess && response.data != null) {
+      return response.data!;
     }
     return [];
   }
@@ -235,7 +260,17 @@ class _ExploreScreenState extends State<ExploreScreen> {
             final isSelected = _selectedCategoryIndex == index;
             final cat = _categories[index];
             return GestureDetector(
-              onTap: () => setState(() => _selectedCategoryIndex = index),
+              onTap: () {
+                setState(() {
+                  _selectedCategoryIndex = index;
+                  if (index == 0) {
+                    _popularVideosFuture = _fetchPopularVideos();
+                  } else {
+                    final filter = cat['filter'] as String;
+                    _popularVideosFuture = _fetchVideosByCategory(filter);
+                  }
+                });
+              },
               child: Container(
                 margin: const EdgeInsets.only(right: 10),
                 padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -600,9 +635,11 @@ class _ExploreScreenState extends State<ExploreScreen> {
                 child: const Icon(Icons.local_fire_department, color: Colors.amber, size: 18),
               ),
               const SizedBox(width: 10),
-              const Text(
-                'Contenido Popular',
-                style: TextStyle(
+              Text(
+                _selectedCategoryIndex == 0 
+                  ? 'Contenido Popular' 
+                  : 'Contenido de ${_categories[_selectedCategoryIndex]['label']}',
+                style: const TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w700,
                   color: Color(0xFF1E293B),

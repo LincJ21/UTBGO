@@ -1,0 +1,5 @@
+redis==5.0.1
+rq==1.15.0
+ffmpeg-python==0.2.0
+cloudinary==1.36.0
+python-dotenv==1.0.0

@@ -23,7 +23,7 @@ services:
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
       - INSTITUTIONAL_DOMAIN=${INSTITUTIONAL_DOMAIN:-utb.edu.co}
       - ADMIN_DOMAIN=${ADMIN_DOMAIN:-admin.utb.edu.co}
-      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-*}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-https://app.utbgo.edu.co,http://localhost:3000}
       - TRACKING_SERVICE_URL=${TRACKING_SERVICE_URL:-http://tracking:8091}
       - TRACKING_API_KEY=${TRACKING_API_KEY}
       - RECOMMENDATIONS_SERVICE_URL=${RECOMMENDATIONS_SERVICE_URL:-http://recommendations:8090}
@@ -51,6 +51,18 @@ services:
       - REDIS_URL=${REDIS_URL}
     restart: unless-stopped
 
+  tracking-worker:
+    build:
+      context: ./tracking-service
+      dockerfile: Dockerfile
+    command: ["python", "worker.py"]
+    environment:
+      - DATABASE_URL=${DB_CONNECTION_STRING}
+      - REDIS_URL=${REDIS_URL}
+    restart: unless-stopped
+    depends_on:
+      - tracking
+
   recommendations:
     build:
       context: ./recommendations-service
@@ -63,6 +75,17 @@ services:
       - DATABASE_URL=${DB_CONNECTION_STRING}
       - REDIS_URL=${REDIS_URL}
     restart: unless-stopped
+
+  video-worker:
+    build:
+      context: ./video-worker-service
+      dockerfile: Dockerfile
+    environment:
+      - REDIS_URL=${REDIS_URL}
+      - CLOUDINARY_URL=${CLOUDINARY_URL}
+    restart: unless-stopped
+    depends_on:
+      - api
 
   # Redis para cache y rate limiting distribuido (opcional para producción)
   # redis:

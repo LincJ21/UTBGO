@@ -9,10 +9,12 @@ import 'single_video_screen.dart';
 /// Maneja su propio estado de carga, error y "sin resultados", incluyendo pull-to-refresh.
 class SearchResultsScreen extends StatefulWidget {
   final String query;
+  final String categoryFilter;
 
   const SearchResultsScreen({
     super.key,
-    required this.query,
+    this.query = '',
+    this.categoryFilter = '',
   });
 
   @override
@@ -25,21 +27,32 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
   bool _isLoading = true;
   String? _error;
 
+  // Filtros
+  String _dateFilter = '';
+  String _authorFilter = '';
+
   @override
   void initState() {
     super.initState();
     _performSearch();
   }
 
-  /// Realiza la búsqueda llamando al API real con autenticación JWT.
+  /// Realiza la búsqueda llamando al API real con autenticación JWT y filtros.
   Future<void> _performSearch() async {
     setState(() {
       _isLoading = true;
       _error = null;
     });
 
+    // Si hay query, la incluimos; si viene vacía (filtro por categoría), usamos '*' como comodín
+    final searchQuery = widget.query.isNotEmpty ? widget.query : '*';
+    final queryParams = <String, String>{'q': searchQuery};
+    if (_dateFilter.isNotEmpty) queryParams['date'] = _dateFilter;
+    if (_authorFilter.isNotEmpty) queryParams['author'] = _authorFilter;
+    if (widget.categoryFilter.isNotEmpty) queryParams['category'] = widget.categoryFilter;
+
     final Uri uri = Uri.parse(AppConfig.videosSearchEndpoint)
-        .replace(queryParameters: {'q': widget.query});
+        .replace(queryParameters: queryParams);
 
     final response = await _apiClient.get<List<VideoModel>>(
       uri.toString(),
@@ -65,18 +78,121 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
     }
   }
 
+  void _showFiltersBottomSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom,
+                top: 24,
+                left: 20,
+                right: 20,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Filtros de búsqueda',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 20),
+                  const Text('Fecha de publicación', style: TextStyle(fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 10,
+                    children: [
+                      _buildDateChip('Cualquiera', '', setModalState),
+                      _buildDateChip('Hoy', 'today', setModalState),
+                      _buildDateChip('Esta semana', 'week', setModalState),
+                      _buildDateChip('Este mes', 'month', setModalState),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  const Text('Autor', style: TextStyle(fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: TextEditingController(text: _authorFilter),
+                    decoration: InputDecoration(
+                      hintText: 'Ej. Juan Pérez',
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    ),
+                    onChanged: (val) => _authorFilter = val,
+                  ),
+                  const SizedBox(height: 30),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: ElevatedButton(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        _performSearch();
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF003399),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      child: const Text('Aplicar filtros', style: TextStyle(color: Colors.white, fontSize: 16)),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildDateChip(String label, String value, StateSetter setModalState) {
+    final isSelected = _dateFilter == value;
+    return ChoiceChip(
+      label: Text(label),
+      selected: isSelected,
+      selectedColor: const Color(0xFF003399).withOpacity(0.2),
+      labelStyle: TextStyle(
+        color: isSelected ? const Color(0xFF003399) : Colors.black87,
+        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+      ),
+      onSelected: (selected) {
+        if (selected) {
+          setModalState(() => _dateFilter = value);
+          setState(() => _dateFilter = value);
+        }
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
         title: Text(
-          'Resultados para "${widget.query}"',
+          widget.categoryFilter.isNotEmpty
+              ? widget.categoryFilter
+              : 'Resultados para "${widget.query}"',
           style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 18),
         ),
         backgroundColor: const Color(0xFF003399),
         foregroundColor: Colors.white,
         elevation: 0,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.filter_list),
+            onPressed: _showFiltersBottomSheet,
+            tooltip: 'Filtros',
+          ),
+        ],
       ),
       body: _buildBody(),
     );

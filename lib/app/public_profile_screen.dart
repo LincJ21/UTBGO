@@ -24,6 +24,9 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
   bool _isLoading = true;
   bool _hasError = false;
   String _errorMessage = '';
+  
+  bool _isFollowing = false;
+  bool _isFollowingLoading = false;
 
   @override
   void initState() {
@@ -62,6 +65,7 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
 
       if (profileResponse.statusCode == 200) {
         _profileData = json.decode(profileResponse.body);
+        _isFollowing = _profileData?['is_following'] ?? false;
       } else {
         throw Exception("No se pudo cargar el perfil");
       }
@@ -95,6 +99,44 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
     if (role == 'profesor') return 'Profesor UTB';
     if (role == 'estudiante') return 'Estudiante';
     return 'Usuario';
+  }
+
+  Future<void> _toggleFollow() async {
+    setState(() {
+      _isFollowingLoading = true;
+    });
+    try {
+      final token = await _storage.read(key: 'jwt_token');
+      final url = Uri.parse(AppConfig.publicProfileFollowEndpoint(widget.authorId));
+      
+      http.Response response;
+      if (_isFollowing) {
+        response = await http.delete(url, headers: {'Authorization': 'Bearer $token'});
+      } else {
+        response = await http.post(url, headers: {'Authorization': 'Bearer $token'});
+      }
+      
+      if (response.statusCode == 200) {
+        setState(() {
+          _isFollowing = !_isFollowing;
+        });
+      } else {
+        final body = jsonDecode(response.body);
+        throw Exception(body['error'] ?? "Error procesando solicitud");
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Error: ${e.toString().replaceAll('Exception: ', '')}"), backgroundColor: Colors.redAccent)
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isFollowingLoading = false;
+        });
+      }
+    }
   }
 
   @override
@@ -194,6 +236,8 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
                     fontSize: 16,
                   ),
                 ),
+                const SizedBox(height: 16),
+                _buildFollowButton(),
                 const SizedBox(height: 20),
                 if (_profileData?['bio'] != null && _profileData!['bio'].isNotEmpty)
                   Text(
@@ -339,6 +383,28 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
             Text(label, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildFollowButton() {
+    return SizedBox(
+      width: 200,
+      height: 45,
+      child: ElevatedButton(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: _isFollowing ? Colors.grey[800] : const Color(0xFF0044CC), // UTB Blue
+          foregroundColor: Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
+          elevation: _isFollowing ? 0 : 4,
+        ),
+        onPressed: _isFollowingLoading ? null : _toggleFollow,
+        child: _isFollowingLoading 
+          ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+          : Text(
+              _isFollowing ? 'Siguiendo' : 'Seguir',
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
       ),
     );
   }

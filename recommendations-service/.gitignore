@@ -48,6 +48,7 @@ venv.bak/
 app/models_storage/*.pkl
 app/models_storage/*.model
 app/models_storage/*.txt
+app/models_storage/model_v*.lgb
 notebooks/.ipynb_checkpoints/
 *.csv
 *.parquet

@@ -58,3 +58,33 @@ async def health_check(db: Session = Depends(get_db)):
 
     from fastapi import HTTPException
     raise HTTPException(status_code=503, detail="Service Unavailable: Database offline")
+
+
+@router.get("/internal/analytics/overview")
+async def get_analytics_overview(db: Session = Depends(get_db)):
+    """
+    Returns high-level content analytics (Top 10 videos by engagement and views).
+    Protected by API Key dependency on the router.
+    """
+    try:
+        # Top 10 by total views
+        top_views_q = text("SELECT content_id, total_views FROM content_metrics ORDER BY total_views DESC LIMIT 10")
+        top_views = db.execute(top_views_q).fetchall()
+        
+        # Top 10 by engagement rate
+        top_eng_q = text("SELECT content_id, engagement_rate FROM content_metrics WHERE total_views > 10 ORDER BY engagement_rate DESC LIMIT 10")
+        top_eng = db.execute(top_eng_q).fetchall()
+        
+        return {
+            "status": "success",
+            "data": {
+                "top_by_views": [{"content_id": r[0], "views": r[1]} for r in top_views],
+                "top_by_engagement": [{"content_id": r[0], "engagement_rate": r[1]} for r in top_eng]
+            }
+        }
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error fetching analytics: {e}")
+        from fastapi import HTTPException
+        raise HTTPException(status_code=500, detail="Internal Server Error fetching analytics")

@@ -37,6 +37,30 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
   final TextEditingController _searchController = TextEditingController();
   bool _isSearching = false;
   bool _showControls = true;
+  bool _viewTracked = false; // Evita reportar la misma vista múltiples veces por rebuild
+
+  /// Reporta al backend que el usuario reprodujo este video (fire-and-forget).
+  /// Usa http.post directo en vez de ApiClient para evitar que errores de
+  /// tracking muestren SnackBars al usuario. El tracking es invisible.
+  Future<void> _trackView() async {
+    if (_viewTracked) return;
+    _viewTracked = true;
+
+    try {
+      final token = await const FlutterSecureStorage().read(key: 'jwt_token');
+      if (token == null) return;
+
+      http.post(
+        Uri.parse(AppConfig.videoViewUrl(widget.video.id)),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+      ); // No await: fire-and-forget
+    } catch (_) {
+      // Silenciar errores de tracking — nunca interrumpir la experiencia del usuario
+    }
+  }
 
   Future<void> _toggleLike() async {
     final wasLiked = widget.video.isLiked;
@@ -105,7 +129,10 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
         setState(() {});
         _controller!.play();
         _controller!.setLooping(true);
+        _trackView(); // Registrar reproducción al iniciar el video
       });
+    } else {
+      _trackView(); // También registrar para imágenes (el usuario la vio)
     }
   }
 

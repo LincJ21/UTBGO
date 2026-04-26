@@ -184,13 +184,20 @@ android/shas_exact.txt
 .python-version
 
 # ==============================================================================
-# DOCUMENTOS INTERNOS
+# DOCUMENTOS INTERNOS Y RESTRICCIONES
 # ==============================================================================
-# Documentos internos (SAD se mantiene si es necesario para entrega)
 AUDITORIA_PRODUCCION.md
 avanceactual.md
 faltante.md
-# SAD.md  <-- Descomentar si no quieres que se suba el SAD
+SAD.md
+produccion.md
+docUpdate.md
+diagramDB.md
+
+# Archivos de análisis y logs de terminal locales
+analyze_report.txt
+test_error.txt
+widget_analyze.txt
 
 # Scripts de prueba local
 # Scripts de prueba local

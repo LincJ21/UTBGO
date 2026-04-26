@@ -113,6 +113,65 @@ func NewPostgresProfileRepository() *PostgresProfileRepository {
 	return &PostgresProfileRepository{}
 }
 
+// GetUserStats calcula las métricas vitales (likes, videos, views, seguidores) para el perfil de usuario.
+// Se apoya en consultas directas y cruces de información de interacción y seguimiento.
+func (r *PostgresProfileRepository) GetUserStats(ctx context.Context, userID int) (followers int, totalLikes int, totalViews int, totalVideos int, err error) {
+	// Total de videos publicados
+	err = DB.QueryRowContext(ctx, "SELECT COUNT(*) FROM contenidos WHERE id_autor = $1", userID).Scan(&totalVideos)
+	if err != nil {
+		return 0, 0, 0, 0, fmt.Errorf("error counting videos: %w", err)
+	}
+
+	// Total Likes recibidos
+	err = DB.QueryRowContext(ctx, `
+		SELECT COUNT(*) 
+		FROM interacciones i
+		JOIN contenidos c ON i.id_contenido = c.id_contenido
+		JOIN tipos_interaccion ti ON i.id_tipo_interaccion = ti.id_tipo_interaccion
+		WHERE c.id_autor = $1 AND ti.codigo = 'like'`, userID).Scan(&totalLikes)
+	if err != nil {
+		return totalVideos, 0, 0, 0, fmt.Errorf("error counting likes: %w", err)
+	}
+
+	// Followers (Calculados desde tabla seguidores)
+	err = DB.QueryRowContext(ctx, "SELECT COUNT(*) FROM seguidores WHERE id_seguido = $1", userID).Scan(&followers)
+	if err != nil {
+		return 0, 0, 0, 0, fmt.Errorf("error counting followers: %w", err)
+	}
+	// Views (Vistas calculadas desde tracking_events en la misma BD Neon)
+	err = DB.QueryRowContext(ctx, `
+		SELECT COUNT(*) 
+		FROM tracking_events 
+		WHERE event_type = 'view' AND content_id IN (SELECT id_contenido FROM contenidos WHERE id_autor = $1)
+	`, userID).Scan(&totalViews)
+	if err != nil {
+		Logger.Warn("No se pudo obtener total views", "error", err)
+		totalViews = 0
+		err = nil // Ignorar error para no fallar el request de perfil
+	}
+
+	return followers, totalLikes, totalViews, totalVideos, nil
+}
+
+// FollowUser inserta un registro en la tabla seguidores ignorando si ya lo sigue
+func (r *PostgresProfileRepository) FollowUser(ctx context.Context, followerID, followedID int) error {
+	if followerID == followedID {
+		return fmt.Errorf("el usuario no puede seguirse a sí mismo")
+	}
+	_, err := DB.ExecContext(ctx, `
+		INSERT INTO seguidores (id_seguidor, id_seguido) 
+		VALUES ($1, $2) 
+		ON CONFLICT DO NOTHING`, followerID, followedID)
+	return err
+}
+
+// UnfollowUser elimina un registro en la tabla seguidores
+func (r *PostgresProfileRepository) UnfollowUser(ctx context.Context, followerID, followedID int) error {
+	_, err := DB.ExecContext(ctx, `
+		DELETE FROM seguidores WHERE id_seguidor = $1 AND id_seguido = $2`, followerID, followedID)
+	return err
+}
+
 func (r *PostgresProfileRepository) FindByUserID(ctx context.Context, userID int) (*Profile, error) {
 	start := time.Now()
 	var profile Profile
@@ -182,25 +241,27 @@ func (r *PostgresProfileRepository) UpdateAvatar(ctx context.Context, userID int
 	return err
 }
 
-func (r *PostgresProfileRepository) GetPublicProfile(ctx context.Context, userID int) (*PublicProfile, error) {
+func (r *PostgresProfileRepository) GetPublicProfile(ctx context.Context, userID int, requestorID *int) (*PublicProfile, error) {
 	start := time.Now()
 	var profile PublicProfile
 	var avatarURL sql.NullString
 	var bio, faculty, cvlac, website sql.NullString
 	var interestsJSON sql.NullString
+	var isFollowing bool
 
 	err := DB.QueryRowContext(ctx, `
 		SELECT 
 			u.id_usuario, p.nombre || ' ' || p.apellido, p.avatar_url, 
 			p.biografia, p.facultad, p.cvlac_url, p.website_url, 
-			tu.codigo, array_to_json(p.intereses)
+			tu.codigo, array_to_json(p.intereses),
+			COALESCE((SELECT EXISTS(SELECT 1 FROM seguidores WHERE id_seguidor = $1 AND id_seguido = $2)), false) AS is_following
 		FROM usuarios u
 		JOIN perfiles p ON u.id_usuario = p.id_usuario
 		JOIN tipos_usuario tu ON u.id_tipo_usuario = tu.id_tipo_usuario
-		WHERE u.id_usuario = $1`, userID).Scan(
+		WHERE u.id_usuario = $2`, requestorID, userID).Scan(
 			&profile.UserID, &profile.Username, &avatarURL,
 			&bio, &faculty, &cvlac, &website, 
-			&profile.Role, &interestsJSON)
+			&profile.Role, &interestsJSON, &isFollowing)
 
 	LogDB("SELECT", "perfiles_public", time.Since(start).Milliseconds(), err)
 
@@ -226,6 +287,8 @@ func (r *PostgresProfileRepository) GetPublicProfile(ctx context.Context, userID
 	if website.Valid {
 		profile.WebsiteURL = website.String
 	}
+	
+	profile.IsFollowing = isFollowing
 
 	// Parsear JSON intereses en slice
 	// Para uso público, asumo que sí se envían
@@ -282,11 +345,17 @@ func (r *PostgresVideoRepository) Create(ctx context.Context, video *Video) (int
 		typeID = pollContentTypeID
 	}
 
+	// Si la categoría está vacía, usar 'General' por defecto
+	category := video.Category
+	if category == "" {
+		category = "General"
+	}
+
 	err := DB.QueryRowContext(ctx, `
-		INSERT INTO contenidos (titulo, descripcion, id_autor, id_tipo_contenido, id_estado_contenido, url_contenido, url_thumbnail)
-		VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id_contenido`,
+		INSERT INTO contenidos (titulo, descripcion, id_autor, id_tipo_contenido, id_estado_contenido, url_contenido, url_thumbnail, categoria)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id_contenido`,
 		video.Title, video.Description, video.AuthorID, typeID, publishedContentStateID,
-		video.VideoURL, video.ThumbnailURL).Scan(&videoID)
+		video.VideoURL, video.ThumbnailURL, category).Scan(&videoID)
 
 	LogDB("INSERT", "contenidos", time.Since(start).Milliseconds(), err)
 
@@ -315,7 +384,8 @@ func (r *PostgresVideoRepository) GetFeed(ctx context.Context, limit, offset int
 			COALESCE(p.nombre || ' ' || COALESCE(p.apellido, ''), 'Usuario UTB') as author_name, 
 			c.id_autor,
 			COALESCE((SELECT TRUE FROM interacciones WHERE id_usuario = $5 AND id_contenido = c.id_contenido AND id_tipo_interaccion = $1 LIMIT 1), FALSE) as is_liked,
-			COALESCE((SELECT TRUE FROM favoritos WHERE id_usuario = $5 AND id_contenido = c.id_contenido LIMIT 1), FALSE) as is_bookmarked
+			COALESCE((SELECT TRUE FROM favoritos WHERE id_usuario = $5 AND id_contenido = c.id_contenido LIMIT 1), FALSE) as is_bookmarked,
+			COALESCE(c.categoria, 'General') as categoria
 		FROM contenidos c
 		JOIN tipos_contenido tc ON c.id_tipo_contenido = tc.id_tipo_contenido
 		LEFT JOIN perfiles p ON c.id_autor = p.id_usuario
@@ -334,7 +404,7 @@ func (r *PostgresVideoRepository) GetFeed(ctx context.Context, limit, offset int
 	var videos []Video
 	for rows.Next() {
 		var v Video
-		if err := rows.Scan(&v.ID, &v.Title, &v.Description, &v.VideoURL, &v.ThumbnailURL, &v.ContentType, &v.CreatedAt, &v.Likes, &v.Comments, &v.AuthorName, &v.AuthorID, &v.IsLiked, &v.IsBookmarked); err != nil {
+		if err := rows.Scan(&v.ID, &v.Title, &v.Description, &v.VideoURL, &v.ThumbnailURL, &v.ContentType, &v.CreatedAt, &v.Likes, &v.Comments, &v.AuthorName, &v.AuthorID, &v.IsLiked, &v.IsBookmarked, &v.Category); err != nil {
 			Logger.Warn("Error scanning feed row", "error", err)
 			continue
 		}
@@ -367,7 +437,8 @@ func (r *PostgresVideoRepository) GetByAuthor(ctx context.Context, authorID int,
 			COALESCE(p.nombre || ' ' || COALESCE(p.apellido, ''), 'Usuario UTB') as author_name, 
 			c.id_autor,
 			COALESCE((SELECT TRUE FROM interacciones WHERE id_usuario = $4 AND id_contenido = c.id_contenido AND id_tipo_interaccion = $1 LIMIT 1), FALSE) as is_liked,
-			COALESCE((SELECT TRUE FROM favoritos WHERE id_usuario = $4 AND id_contenido = c.id_contenido LIMIT 1), FALSE) as is_bookmarked
+			COALESCE((SELECT TRUE FROM favoritos WHERE id_usuario = $4 AND id_contenido = c.id_contenido LIMIT 1), FALSE) as is_bookmarked,
+			COALESCE(c.categoria, 'General') as categoria
 		FROM contenidos c
 		JOIN tipos_contenido tc ON c.id_tipo_contenido = tc.id_tipo_contenido
 		LEFT JOIN perfiles p ON c.id_autor = p.id_usuario
@@ -386,7 +457,7 @@ func (r *PostgresVideoRepository) GetByAuthor(ctx context.Context, authorID int,
 	var videos []Video
 	for rows.Next() {
 		var v Video
-		if err := rows.Scan(&v.ID, &v.Title, &v.Description, &v.VideoURL, &v.ThumbnailURL, &v.ContentType, &v.CreatedAt, &v.Likes, &v.Comments, &v.AuthorName, &v.AuthorID, &v.IsLiked, &v.IsBookmarked); err != nil {
+		if err := rows.Scan(&v.ID, &v.Title, &v.Description, &v.VideoURL, &v.ThumbnailURL, &v.ContentType, &v.CreatedAt, &v.Likes, &v.Comments, &v.AuthorName, &v.AuthorID, &v.IsLiked, &v.IsBookmarked, &v.Category); err != nil {
 			Logger.Warn("Error scanning author publications row", "error", err)
 			continue
 		}
@@ -398,9 +469,16 @@ func (r *PostgresVideoRepository) GetByAuthor(ctx context.Context, authorID int,
 	return videos, nil
 }
 
-func (r *PostgresVideoRepository) Search(ctx context.Context, query string, limit int, userID *int) ([]Video, error) {
+func (r *PostgresVideoRepository) Search(ctx context.Context, query string, dateFilter string, authorFilter string, categoryFilter string, limit int, userID *int) ([]Video, error) {
 	start := time.Now()
-	searchQuery := "%" + strings.ToLower(query) + "%"
+
+	// Si el query es '*', buscar todo (usado al filtrar solo por categoría)
+	var searchQuery string
+	if query == "*" {
+		searchQuery = "%"
+	} else {
+		searchQuery = "%" + strings.ToLower(query) + "%"
+	}
 
 	// Si userID es 0 o nil, las banderas serán falsas por defecto
 	idForFlags := 0
@@ -408,7 +486,7 @@ func (r *PostgresVideoRepository) Search(ctx context.Context, query string, limi
 		idForFlags = *userID
 	}
 
-	rows, err := DB.QueryContext(ctx, `
+	baseSQL := `
 		SELECT 
 			c.id_contenido, c.titulo, COALESCE(c.descripcion, ''), c.url_contenido, COALESCE(c.url_thumbnail, ''),
 			tc.codigo as content_type,
@@ -417,16 +495,45 @@ func (r *PostgresVideoRepository) Search(ctx context.Context, query string, limi
 			(SELECT COUNT(*) FROM comentarios co WHERE co.id_contenido = c.id_contenido) as comments,
 			COALESCE(p.nombre || ' ' || COALESCE(p.apellido, ''), 'Usuario UTB') as author_name, 
 			c.id_autor,
-			COALESCE((SELECT TRUE FROM interacciones WHERE id_usuario = $5 AND id_contenido = c.id_contenido AND id_tipo_interaccion = $1 LIMIT 1), FALSE) as is_liked,
-			COALESCE((SELECT TRUE FROM favoritos WHERE id_usuario = $5 AND id_contenido = c.id_contenido LIMIT 1), FALSE) as is_bookmarked
+			COALESCE((SELECT TRUE FROM interacciones WHERE id_usuario = $4 AND id_contenido = c.id_contenido AND id_tipo_interaccion = $1 LIMIT 1), FALSE) as is_liked,
+			COALESCE((SELECT TRUE FROM favoritos WHERE id_usuario = $4 AND id_contenido = c.id_contenido LIMIT 1), FALSE) as is_bookmarked,
+			COALESCE(c.categoria, 'General') as categoria
 		FROM contenidos c
 		JOIN tipos_contenido tc ON c.id_tipo_contenido = tc.id_tipo_contenido
 		LEFT JOIN perfiles p ON c.id_autor = p.id_usuario
 		WHERE c.id_estado_contenido = $2 
-		  AND (LOWER(c.titulo) LIKE $3 OR LOWER(c.descripcion) LIKE $3)
-		ORDER BY c.fecha_creacion DESC
-		LIMIT $4`,
-		likeInteractionTypeID, publishedContentStateID, searchQuery, limit, idForFlags)
+		  AND (LOWER(c.titulo) LIKE $3 OR LOWER(c.descripcion) LIKE $3)`
+
+	args := []interface{}{likeInteractionTypeID, publishedContentStateID, searchQuery, idForFlags}
+	argIdx := 5
+
+	if dateFilter != "" {
+		switch dateFilter {
+		case "today":
+			baseSQL += ` AND c.fecha_creacion >= NOW() - INTERVAL '1 day'`
+		case "week":
+			baseSQL += ` AND c.fecha_creacion >= NOW() - INTERVAL '7 days'`
+		case "month":
+			baseSQL += ` AND c.fecha_creacion >= NOW() - INTERVAL '30 days'`
+		}
+	}
+
+	if authorFilter != "" {
+		baseSQL += fmt.Sprintf(` AND LOWER(COALESCE(p.nombre || ' ' || COALESCE(p.apellido, ''), '')) LIKE $%d`, argIdx)
+		args = append(args, "%"+strings.ToLower(authorFilter)+"%")
+		argIdx++
+	}
+
+	if categoryFilter != "" {
+		baseSQL += fmt.Sprintf(` AND c.categoria = $%d`, argIdx)
+		args = append(args, categoryFilter)
+		argIdx++
+	}
+
+	baseSQL += fmt.Sprintf(` ORDER BY c.fecha_creacion DESC LIMIT $%d`, argIdx)
+	args = append(args, limit)
+
+	rows, err := DB.QueryContext(ctx, baseSQL, args...)
 
 	LogDB("SEARCH", "contenidos", time.Since(start).Milliseconds(), err)
 
@@ -438,7 +545,7 @@ func (r *PostgresVideoRepository) Search(ctx context.Context, query string, limi
 	var videos []Video
 	for rows.Next() {
 		var v Video
-		if err := rows.Scan(&v.ID, &v.Title, &v.Description, &v.VideoURL, &v.ThumbnailURL, &v.ContentType, &v.CreatedAt, &v.Likes, &v.Comments, &v.AuthorName, &v.AuthorID, &v.IsLiked, &v.IsBookmarked); err != nil {
+		if err := rows.Scan(&v.ID, &v.Title, &v.Description, &v.VideoURL, &v.ThumbnailURL, &v.ContentType, &v.CreatedAt, &v.Likes, &v.Comments, &v.AuthorName, &v.AuthorID, &v.IsLiked, &v.IsBookmarked, &v.Category); err != nil {
 			Logger.Warn("Error scanning search result row", "error", err)
 			continue
 		}
@@ -835,6 +942,76 @@ func (r *PostgresCommentRepository) Delete(ctx context.Context, commentID, userI
 		return fmt.Errorf("comment not found or not authorized")
 	}
 	return nil
+}
+
+// GetConnections devuelve las dos listas: gente que sigue a userID (Followers) y gente a la que userID sigue (Following).
+func (r *PostgresProfileRepository) GetConnections(ctx context.Context, userID int, requestorID *int) (*ConnectionsResponse, error) {
+	start := time.Now()
+	resp := &ConnectionsResponse{
+		Followers: make([]ConnectionUser, 0),
+		Following: make([]ConnectionUser, 0),
+	}
+
+	// 1. Obtener Seguidores (Los que siguen a userID)
+	queryFollowers := `
+		SELECT u.id_usuario, p.nombre || ' ' || p.apellido, p.avatar_url, tu.codigo,
+			COALESCE((SELECT EXISTS(SELECT 1 FROM seguidores WHERE id_seguidor = $2 AND id_seguido = u.id_usuario)), false) AS is_following
+		FROM seguidores s
+		JOIN usuarios u ON s.id_seguidor = u.id_usuario
+		JOIN perfiles p ON u.id_usuario = p.id_usuario
+		JOIN tipos_usuario tu ON u.id_tipo_usuario = tu.id_tipo_usuario
+		WHERE s.id_seguido = $1
+		ORDER BY s.fecha_creacion DESC
+	`
+	rowsFollowers, err := DB.QueryContext(ctx, queryFollowers, userID, requestorID)
+	if err != nil {
+		return nil, fmt.Errorf("error obteniendo followers: %w", err)
+	}
+	defer rowsFollowers.Close()
+
+	for rowsFollowers.Next() {
+		var user ConnectionUser
+		var avatarURL sql.NullString
+		if err := rowsFollowers.Scan(&user.UserID, &user.Username, &avatarURL, &user.Role, &user.IsFollowing); err != nil {
+			return nil, err
+		}
+		if avatarURL.Valid {
+			user.AvatarURL = avatarURL.String
+		}
+		resp.Followers = append(resp.Followers, user)
+	}
+
+	// 2. Obtener Seguidos (A los que userID sigue)
+	queryFollowing := `
+		SELECT u.id_usuario, p.nombre || ' ' || p.apellido, p.avatar_url, tu.codigo,
+			COALESCE((SELECT EXISTS(SELECT 1 FROM seguidores WHERE id_seguidor = $2 AND id_seguido = u.id_usuario)), false) AS is_following
+		FROM seguidores s
+		JOIN usuarios u ON s.id_seguido = u.id_usuario
+		JOIN perfiles p ON u.id_usuario = p.id_usuario
+		JOIN tipos_usuario tu ON u.id_tipo_usuario = tu.id_tipo_usuario
+		WHERE s.id_seguidor = $1
+		ORDER BY s.fecha_creacion DESC
+	`
+	rowsFollowing, err := DB.QueryContext(ctx, queryFollowing, userID, requestorID)
+	if err != nil {
+		return nil, fmt.Errorf("error obteniendo following: %w", err)
+	}
+	defer rowsFollowing.Close()
+
+	for rowsFollowing.Next() {
+		var user ConnectionUser
+		var avatarURL sql.NullString
+		if err := rowsFollowing.Scan(&user.UserID, &user.Username, &avatarURL, &user.Role, &user.IsFollowing); err != nil {
+			return nil, err
+		}
+		if avatarURL.Valid {
+			user.AvatarURL = avatarURL.String
+		}
+		resp.Following = append(resp.Following, user)
+	}
+
+	LogDB("SELECT", "seguidores_y_seguidos", time.Since(start).Milliseconds(), nil)
+	return resp, nil
 }
 
 func (r *PostgresCommentRepository) CountByVideoID(ctx context.Context, videoID int) (int, error) {

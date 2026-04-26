@@ -239,7 +239,7 @@ func handleGetPublicProfile(c *gin.Context) {
 	}
 
 	// 1. Obtener información del Target
-	targetProfile, err := Repos.Profiles.GetPublicProfile(c.Request.Context(), targetID)
+	targetProfile, err := Repos.Profiles.GetPublicProfile(c.Request.Context(), targetID, &requesterID)
 	if err != nil {
 		Logger.Error("Error al obtener perfil público", "error", err, "target_id", targetID)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Falló al cargar perfil target"})
@@ -285,6 +285,62 @@ func handleGetPublicProfile(c *gin.Context) {
 
 	// D: Estudiantes y Profesores pueden ver Profesores y Estudiantes
 	c.JSON(http.StatusOK, targetProfile)
+}
+
+func handleFollowUser(c *gin.Context) {
+	followerIDVal, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "No autenticado"})
+		return
+	}
+	followerID := int(followerIDVal.(float64))
+
+	targetIDStr := c.Param("id")
+	targetID, err := strconv.Atoi(targetIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ID de usuario inválido"})
+		return
+	}
+
+	err = Repos.Profiles.FollowUser(c.Request.Context(), followerID, targetID)
+	if err != nil {
+		Logger.Error("Error al seguir usuario", "error", err, "follower", followerID, "followed", targetID)
+		if err.Error() == "el usuario no puede seguirse a sí mismo" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Falló al seguir usuario"})
+		return
+	}
+
+	// c.Request.Context().Value("cache_invalidator") // Lógica simplificada de invalidación si la tuviéramos
+	
+	c.JSON(http.StatusOK, gin.H{"message": "Usuario seguido exitosamente"})
+}
+
+func handleUnfollowUser(c *gin.Context) {
+	followerIDVal, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "No autenticado"})
+		return
+	}
+	followerID := int(followerIDVal.(float64))
+
+	targetIDStr := c.Param("id")
+	targetID, err := strconv.Atoi(targetIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ID de usuario inválido"})
+		return
+	}
+
+	err = Repos.Profiles.UnfollowUser(c.Request.Context(), followerID, targetID)
+	if err != nil {
+		Logger.Error("Error al dejar de seguir usuario", "error", err, "follower", followerID, "followed", targetID)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Falló al dejar de seguir usuario"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Has dejado de seguir al usuario"})
 }
 
 func handleGetPublicPublications(c *gin.Context) {
@@ -402,7 +458,18 @@ func handleGetProfile(c *gin.Context) {
 		user.Interests = []string{}
 	}
 
-	// Guardar en caché (Ahora incluye el campo Role e Interests en el struct User)
+	// Obtener métricas transaccionales
+	followers, totalLikes, totalViews, totalVideos, errStats := Repos.Profiles.GetUserStats(c.Request.Context(), userID)
+	if errStats == nil {
+		user.FollowersCount = followers
+		user.TotalLikesReceived = totalLikes
+		user.TotalViews = totalViews
+		user.TotalVideos = totalVideos
+	} else {
+		Logger.Warn("No se pudieron cargar estadisticas del usuario", "user_id", userID, "error", errStats)
+	}
+
+	// Guardar en caché (Ahora incluye el campo Role, Interests y Stats en el struct User)
 	if Cache != nil {
 		Cache.SetProfile(c.Request.Context(), userID, user)
 	}
@@ -731,6 +798,33 @@ func handleGetComments(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, comments)
+}
+
+func handleGetConnections(c *gin.Context) {
+	// 1. Quién pide
+	var requesterID *int
+	if userIDVal, exists := c.Get("userID"); exists {
+		id := int(userIDVal.(float64))
+		requesterID = &id
+	}
+
+	// 2. De quién lo pide
+	targetIDStr := c.Param("id")
+	targetID, err := strconv.Atoi(targetIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ID de usuario inválido"})
+		return
+	}
+
+	// 3. Consultar DB
+	connections, err := Repos.Profiles.GetConnections(c.Request.Context(), targetID, requesterID)
+	if err != nil {
+		Logger.Error("Error al obtener conexiones", "error", err, "target", targetID)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "No se pudieron obtener las conexiones"})
+		return
+	}
+
+	c.JSON(http.StatusOK, connections)
 }
 
 // handleCreateComment crea un nuevo comentario en un video
