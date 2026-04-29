@@ -50,7 +50,7 @@ func (r *PostgresUserRepository) FindByEmail(ctx context.Context, email string) 
 		FROM usuarios u
 		JOIN tipos_usuario tu ON u.id_tipo_usuario = tu.id_tipo_usuario
 		LEFT JOIN perfiles p ON u.id_usuario = p.id_usuario
-		WHERE u.email = $1`, email).Scan(&user.ID, &user.Username, &user.Email, &avatarURL, &user.PasswordHash, &user.Role)
+		WHERE LOWER(u.email) = LOWER($1)`, email).Scan(&user.ID, &user.Username, &user.Email, &avatarURL, &user.PasswordHash, &user.Role)
 
 	LogDB("SELECT", "usuarios", time.Since(start).Milliseconds(), err)
 
@@ -71,9 +71,14 @@ func (r *PostgresUserRepository) Create(ctx context.Context, user *User) (int, e
 	var userID int
 
 	// Obtener IDs de referencia
-	var studentTypeID, activeStateID int
-	if err := DB.QueryRowContext(ctx, "SELECT id_tipo_usuario FROM tipos_usuario WHERE codigo = 'estudiante'").Scan(&studentTypeID); err != nil {
-		return 0, fmt.Errorf("error finding student type: %w", err)
+	roleCode := strings.TrimSpace(user.Role)
+	if roleCode == "" {
+		roleCode = "estudiante"
+	}
+
+	var userTypeID, activeStateID int
+	if err := DB.QueryRowContext(ctx, "SELECT id_tipo_usuario FROM tipos_usuario WHERE codigo = $1", roleCode).Scan(&userTypeID); err != nil {
+		return 0, fmt.Errorf("error finding user type '%s': %w", roleCode, err)
 	}
 	if err := DB.QueryRowContext(ctx, "SELECT id_estado_usuario FROM estados_usuario WHERE codigo = 'activo'").Scan(&activeStateID); err != nil {
 		return 0, fmt.Errorf("error finding active state: %w", err)
@@ -82,7 +87,7 @@ func (r *PostgresUserRepository) Create(ctx context.Context, user *User) (int, e
 	err := DB.QueryRowContext(ctx, `
 		INSERT INTO usuarios (id_tipo_usuario, id_estado_usuario, email, password_hash, fecha_registro)
 		VALUES ($1, $2, $3, $4, NOW()) RETURNING id_usuario`,
-		studentTypeID, activeStateID, user.Email, user.PasswordHash).Scan(&userID)
+		userTypeID, activeStateID, strings.ToLower(strings.TrimSpace(user.Email)), user.PasswordHash).Scan(&userID)
 
 	LogDB("INSERT", "usuarios", time.Since(start).Milliseconds(), err)
 
@@ -229,7 +234,7 @@ func (r *PostgresProfileRepository) UpdateProfile(ctx context.Context, profile *
 		SET nombre = $1, biografia = $2, facultad = $3, cvlac_url = $4, website_url = $5
 		WHERE id_usuario = $6`,
 		profile.Name, profile.Bio, profile.Faculty, profile.CvlacURL, profile.WebsiteURL, profile.UserID)
-		
+
 	LogDB("UPDATE", "perfiles", time.Since(start).Milliseconds(), err)
 	return err
 }
@@ -259,9 +264,9 @@ func (r *PostgresProfileRepository) GetPublicProfile(ctx context.Context, userID
 		JOIN perfiles p ON u.id_usuario = p.id_usuario
 		JOIN tipos_usuario tu ON u.id_tipo_usuario = tu.id_tipo_usuario
 		WHERE u.id_usuario = $2`, requestorID, userID).Scan(
-			&profile.UserID, &profile.Username, &avatarURL,
-			&bio, &faculty, &cvlac, &website, 
-			&profile.Role, &interestsJSON, &isFollowing)
+		&profile.UserID, &profile.Username, &avatarURL,
+		&bio, &faculty, &cvlac, &website,
+		&profile.Role, &interestsJSON, &isFollowing)
 
 	LogDB("SELECT", "perfiles_public", time.Since(start).Milliseconds(), err)
 
@@ -287,7 +292,7 @@ func (r *PostgresProfileRepository) GetPublicProfile(ctx context.Context, userID
 	if website.Valid {
 		profile.WebsiteURL = website.String
 	}
-	
+
 	profile.IsFollowing = isFollowing
 
 	// Parsear JSON intereses en slice
@@ -295,6 +300,16 @@ func (r *PostgresProfileRepository) GetPublicProfile(ctx context.Context, userID
 	if interestsJSON.Valid && interestsJSON.String != "" {
 		// En la app no usamos los interests públicos actualmente, pero los retornamos por completitud.
 		profile.Interests = []string{}
+	}
+
+	followers, totalLikes, totalViews, totalVideos, errStats := r.GetUserStats(ctx, userID)
+	if errStats != nil {
+		Logger.Warn("No se pudieron cargar estadisticas publicas del perfil", "user_id", userID, "error", errStats)
+	} else {
+		profile.FollowersCount = followers
+		profile.TotalLikesReceived = totalLikes
+		profile.TotalViews = totalViews
+		profile.TotalVideos = totalVideos
 	}
 
 	return &profile, nil
@@ -465,6 +480,49 @@ func (r *PostgresVideoRepository) GetByAuthor(ctx context.Context, authorID int,
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("error iterating author publications: %w", err)
+	}
+	return videos, nil
+}
+
+func (r *PostgresVideoRepository) GetPublicByAuthor(ctx context.Context, authorID int) ([]PublicVideo, error) {
+	start := time.Now()
+
+	rows, err := DB.QueryContext(ctx, `
+		SELECT
+			c.id_contenido, c.titulo, COALESCE(c.descripcion, ''), c.url_contenido, COALESCE(c.url_thumbnail, ''),
+			tc.codigo as content_type,
+			c.fecha_creacion,
+			(SELECT COUNT(*) FROM interacciones WHERE id_contenido = c.id_contenido AND id_tipo_interaccion = $1) as likes,
+			(SELECT COUNT(*) FROM comentarios co WHERE co.id_contenido = c.id_contenido) as comments,
+			COALESCE(p.nombre || ' ' || COALESCE(p.apellido, ''), 'Usuario UTB') as author_name,
+			c.id_autor,
+			COALESCE(c.categoria, 'General') as categoria
+		FROM contenidos c
+		JOIN tipos_contenido tc ON c.id_tipo_contenido = tc.id_tipo_contenido
+		LEFT JOIN perfiles p ON c.id_autor = p.id_usuario
+		WHERE c.id_estado_contenido = $2 AND c.id_autor = $3
+		ORDER BY c.fecha_creacion DESC
+		LIMIT 50`,
+		likeInteractionTypeID, publishedContentStateID, authorID)
+
+	LogDB("SELECT", "contenidos_public_by_author", time.Since(start).Milliseconds(), err)
+
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var videos []PublicVideo
+	for rows.Next() {
+		var v PublicVideo
+		if err := rows.Scan(&v.ID, &v.Title, &v.Description, &v.VideoURL, &v.ThumbnailURL, &v.ContentType, &v.CreatedAt, &v.Likes, &v.Comments, &v.AuthorName, &v.AuthorID, &v.Category); err != nil {
+			Logger.Warn("Error scanning public author publications row", "error", err)
+			continue
+		}
+		videos = append(videos, v)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating public author publications: %w", err)
 	}
 	return videos, nil
 }
@@ -714,7 +772,7 @@ func (r *PostgresVideoRepository) GetSimilar(ctx context.Context, videoID int, l
 
 func (r *PostgresVideoRepository) GetTrends(ctx context.Context, limit int) ([]TrendingTag, error) {
 	start := time.Now()
-	
+
 	// Extraer hashtags dinámicamente de las descripciones publicadas usando regexp_matches
 	rows, err := DB.QueryContext(ctx, `
 		SELECT word[1] as tag, count(*) 
@@ -792,6 +850,14 @@ func (r *PostgresInteractionRepository) IsLiked(ctx context.Context, userID, vid
 	err := DB.QueryRowContext(ctx, `
 		SELECT EXISTS(SELECT 1 FROM interacciones WHERE id_usuario = $1 AND id_contenido = $2 AND id_tipo_interaccion = $3)`,
 		userID, videoID, likeInteractionTypeID).Scan(&exists)
+	return exists, err
+}
+
+func (r *PostgresInteractionRepository) IsReposted(ctx context.Context, userID, videoID int) (bool, error) {
+	var exists bool
+	err := DB.QueryRowContext(ctx, `
+		SELECT EXISTS(SELECT 1 FROM interacciones WHERE id_usuario = $1 AND id_contenido = $2 AND id_tipo_interaccion = $3)`,
+		userID, videoID, repostInteractionTypeID).Scan(&exists)
 	return exists, err
 }
 

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"html"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -15,35 +14,38 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v4"
-	"google.golang.org/api/idtoken"
 )
 
 // --- Funciones de Ayuda (Refactorización) ---
 
 // getOrCreateUser busca un usuario por email. Si no existe, lo crea junto con su perfil.
-// Devuelve el ID del usuario y un posible error.
-func getOrCreateUser(ctx context.Context, email, name, picture string) (int, error) {
+// roleCode debe venir ya resuelto por la política de autenticación correspondiente.
+func getOrCreateUser(ctx context.Context, email, name, picture, roleCode string) (int, error) {
+	email = strings.ToLower(strings.TrimSpace(email))
+	name = strings.TrimSpace(name)
 	var userID int
 
 	// Intenta encontrar al usuario existente.
 	var currentRoleID int
-	err := DB.QueryRowContext(ctx, "SELECT id_usuario, id_tipo_usuario FROM usuarios WHERE email = $1", email).Scan(&userID, &currentRoleID)
+	var currentRoleCode string
+	err := DB.QueryRowContext(ctx, `
+		SELECT u.id_usuario, u.id_tipo_usuario, tu.codigo
+		FROM usuarios u
+		JOIN tipos_usuario tu ON tu.id_tipo_usuario = u.id_tipo_usuario
+		WHERE LOWER(u.email) = LOWER($1)`, email).Scan(&userID, &currentRoleID, &currentRoleCode)
 	if err == nil {
 		Logger.Info("Usuario existente encontrado", "email", email)
 
-		// Verificar si el rol debe actualizarse (ej: cambió el .env)
-		roleCode := "estudiante"
-		if GlobalRoleMapper == nil {
-			Logger.Warn("GlobalRoleMapper is NIL in getOrCreateUser")
-		} else {
-			roleCode = GlobalRoleMapper.MapRole(email, "google")
-			Logger.Info("Mapa de rol para usuario existente", "email", email, "role_code", roleCode)
-		}
-
+		// Mantener roles administrativos asignados manualmente.
 		var targetRoleID int
 		err = DB.QueryRowContext(ctx, "SELECT id_tipo_usuario FROM tipos_usuario WHERE codigo = $1", roleCode).Scan(&targetRoleID)
-		if err == nil && targetRoleID != currentRoleID {
-			Logger.Info("Actualizando rol de usuario existente", "email", email, "old_role_id", currentRoleID, "new_role_id", targetRoleID)
+		if err == nil && targetRoleID != currentRoleID &&
+			currentRoleCode != RoleAdmin && currentRoleCode != RoleModerador {
+			Logger.Info("Actualizando rol de usuario existente",
+				"email", email,
+				"old_role", currentRoleCode,
+				"new_role", roleCode,
+			)
 			_, _ = DB.ExecContext(ctx, "UPDATE usuarios SET id_tipo_usuario = $1 WHERE id_usuario = $2", targetRoleID, userID)
 		}
 
@@ -70,13 +72,6 @@ func getOrCreateUser(ctx context.Context, email, name, picture string) (int, err
 		return 0, fmt.Errorf("error al iniciar la transacción: %w", err)
 	}
 	defer tx.Rollback() // Se ejecuta si el Commit() no se alcanza.
-
-	// --- Lógica para asegurar que existen los tipos y estados necesarios ---
-	// 1. Determinar el rol usando el mapeador global (OIDC rules)
-	roleCode := "estudiante"
-	if GlobalRoleMapper != nil {
-		roleCode = GlobalRoleMapper.MapRole(email, "google")
-	}
 
 	var roleTypeID int
 	err = tx.QueryRowContext(ctx, "SELECT id_tipo_usuario FROM tipos_usuario WHERE codigo = $1", roleCode).Scan(&roleTypeID)
@@ -142,59 +137,9 @@ func generateJWT(userID int) (string, error) {
 
 // handleVerifyToken es el handler para el flujo de la app nativa.
 func handleVerifyToken(c *gin.Context) {
-	Logger.Info("Recibida petición en /auth/google/verify-token")
-
-	var requestBody struct {
-		Token string `json:"token"`
-	}
-
-	if err := c.ShouldBindJSON(&requestBody); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Formato de petición inválido"})
-		return
-	}
-
-	idToken := requestBody.Token
-	if idToken == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "El token es requerido"})
-		return
-	}
-
-	payload, err := idtoken.Validate(context.Background(), idToken, os.Getenv("GOOGLE_CLIENT_ID"))
-	if err != nil {
-		Logger.Warn("Error al validar el token de Google", "error", err)
-		// No exponer detalles internos del error al cliente
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Token de Google inválido"})
-		return
-	}
-
-	// Extraer información del usuario con type assertions seguras
-	claims := payload.Claims
-	googleEmail, ok := claims["email"].(string)
-	if !ok || googleEmail == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "El token no contiene un email válido"})
-		return
-	}
-	googleName, _ := claims["name"].(string)
-	if googleName == "" {
-		googleName = googleEmail // Fallback al email si no hay nombre
-	}
-	googlePicture, _ := claims["picture"].(string)
-
-	userID, err := getOrCreateUser(c.Request.Context(), googleEmail, googleName, googlePicture)
-	if err != nil {
-		Logger.Error("Error en getOrCreateUser", "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al procesar el usuario"})
-		return
-	}
-
-	tokenString, err := generateJWT(userID)
-	if err != nil {
-		Logger.Error("Error al generar el token JWT", "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Fallo al crear el token"})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"token": tokenString})
+	RespondError(c, ErrForbidden(
+		"Este flujo fue deshabilitado. Los aspirantes deben iniciar con Google desde la app usando un correo @gmail.com",
+	))
 }
 
 // handleLogin ELIMINADO: era código muerto con auth bypass (userID=1 hardcodeado).
@@ -262,29 +207,47 @@ func handleGetPublicProfile(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Usuario requiriente no válido"})
 		return
 	}
-	requesterRole := requesterUser.Role
-
-	// ==== Matriz de Reglas ====
-	// A: Admin lo puede ver todo
-	if requesterRole == "admin" {
-		c.JSON(http.StatusOK, targetProfile)
+	allowed, denialMessage := canViewPublicProfile(requesterUser.Role, targetProfile.Role)
+	if !allowed {
+		c.JSON(http.StatusForbidden, gin.H{"error": denialMessage})
 		return
 	}
 
-	// B: Solo Admins ven a Admins
-	if targetProfile.Role == "admin" {
-		c.JSON(http.StatusForbidden, gin.H{"error": "No tienes permisos corporativos para ver este perfil."})
-		return
-	}
-
-	// C: Aspirantes NO pueden ver Administradores (Regla B) ni Profesores. Dejaremos que no vean a nadie por si acaso excepto estudiantes si es que publican (por la lógica del negocio)
-	if requesterRole == "aspirante" {
-		c.JSON(http.StatusForbidden, gin.H{"error": "No tienes permisos requeridos de estudiante o roles superiores para explorar la red."})
-		return
-	}
-
-	// D: Estudiantes y Profesores pueden ver Profesores y Estudiantes
 	c.JSON(http.StatusOK, targetProfile)
+}
+
+func canViewPublicProfile(requesterRole, targetRole string) (bool, string) {
+	if requesterRole == "admin" {
+		return true, ""
+	}
+
+	if targetRole == "admin" {
+		return false, "No tienes permisos corporativos para ver este perfil."
+	}
+
+	if requesterRole == "aspirante" {
+		if targetRole == "profesor" {
+			return true, ""
+		}
+		return false, "Los aspirantes solo pueden ver perfiles publicos de docentes."
+	}
+
+	return true, ""
+}
+
+// invalidateProfileCaches refresca los perfiles afectados por cambios relacionales
+// como follow/unfollow para evitar followers y stats obsoletos.
+func invalidateProfileCaches(ctx context.Context, userIDs ...int) {
+	if Cache == nil {
+		return
+	}
+
+	for _, userID := range userIDs {
+		if userID <= 0 {
+			continue
+		}
+		Cache.InvalidateProfile(ctx, userID)
+	}
 }
 
 func handleFollowUser(c *gin.Context) {
@@ -313,8 +276,8 @@ func handleFollowUser(c *gin.Context) {
 		return
 	}
 
-	// c.Request.Context().Value("cache_invalidator") // Lógica simplificada de invalidación si la tuviéramos
-	
+	invalidateProfileCaches(c.Request.Context(), followerID, targetID)
+
 	c.JSON(http.StatusOK, gin.H{"message": "Usuario seguido exitosamente"})
 }
 
@@ -340,11 +303,13 @@ func handleUnfollowUser(c *gin.Context) {
 		return
 	}
 
+	invalidateProfileCaches(c.Request.Context(), followerID, targetID)
+
 	c.JSON(http.StatusOK, gin.H{"message": "Has dejado de seguir al usuario"})
 }
 
 func handleGetPublicPublications(c *gin.Context) {
-	// Reutilizamos la misma matriz de seguridad básica que el perfil
+	// Reutilizamos la misma matriz de seguridad básica que el perfil.
 	requesterIDVal, exists := c.Get("userID")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "No autenticado"})
@@ -365,19 +330,26 @@ func handleGetPublicPublications(c *gin.Context) {
 		return
 	}
 
-	if requesterUser.Role == "aspirante" {
-		c.JSON(http.StatusForbidden, gin.H{"error": "Aspirantes no pueden ver publicaciones de terceros."})
-		return
+	if requesterID != targetID {
+		targetUser, err := Repos.Users.FindByID(c.Request.Context(), targetID)
+		if err != nil {
+			Logger.Error("Error al obtener usuario target", "error", err, "target_id", targetID)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Fallo al cargar las publicaciones"})
+			return
+		}
+		if targetUser == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Perfil no encontrado"})
+			return
+		}
+
+		allowed, denialMessage := canViewPublicProfile(requesterUser.Role, targetUser.Role)
+		if !allowed {
+			c.JSON(http.StatusForbidden, gin.H{"error": denialMessage})
+			return
+		}
 	}
 
-	// Fetch target user 
-	targetUser, err := Repos.Users.FindByID(c.Request.Context(), targetID)
-	if targetUser != nil && targetUser.Role == "admin" && requesterUser.Role != "admin" {
-		c.JSON(http.StatusForbidden, gin.H{"error": "Sin acceso."})
-		return
-	}
-
-	videos, err := Repos.Videos.GetByAuthor(c.Request.Context(), targetID, &requesterID)
+	videos, err := Repos.Videos.GetPublicByAuthor(c.Request.Context(), targetID)
 	if err != nil {
 		Logger.Error("Error al obtener publicaciones publicas", "error", err, "target_id", targetID)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Fallo al cargar las publicaciones"})
@@ -385,7 +357,7 @@ func handleGetPublicPublications(c *gin.Context) {
 	}
 
 	if videos == nil {
-		videos = []Video{}
+		videos = []PublicVideo{}
 	}
 	c.JSON(http.StatusOK, videos)
 }
@@ -409,7 +381,7 @@ func handleGetProfile(c *gin.Context) {
 	}
 
 	var user User
-	var avatarURL sql.NullString // Manejar valores nulos de SQL
+	var avatarURL sql.NullString     // Manejar valores nulos de SQL
 	var interestsJSON sql.NullString // Arreglo PostgreSQL convertido a JSON
 	var bio, faculty, cvlac, website sql.NullString
 
@@ -422,8 +394,8 @@ func handleGetProfile(c *gin.Context) {
 		JOIN perfiles p ON u.id_usuario = p.id_usuario
 		JOIN tipos_usuario tu ON u.id_tipo_usuario = tu.id_tipo_usuario
 		WHERE u.id_usuario = $1`, userID).Scan(
-			&user.ID, &user.Username, &user.Email, &avatarURL, &user.Role, &interestsJSON,
-			&bio, &faculty, &cvlac, &website)
+		&user.ID, &user.Username, &user.Email, &avatarURL, &user.Role, &interestsJSON,
+		&bio, &faculty, &cvlac, &website)
 
 	if err != nil {
 		Logger.Error("Error al obtener perfil", "error", err, "user_id", userID)
@@ -1058,14 +1030,14 @@ func handleSearchVideos(c *gin.Context) {
 			continue
 		}
 		searchResults = append(searchResults, gin.H{
-			"id": strconv.Itoa(id), 
-			"title": title, 
-			"description": desc,
-			"video_url": url, 
-			"thumbnail_url": thumb, 
-			"likes": likes,
-			"author_name": authorName,
-			"author_id": authorID,
+			"id":            strconv.Itoa(id),
+			"title":         title,
+			"description":   desc,
+			"video_url":     url,
+			"thumbnail_url": thumb,
+			"likes":         likes,
+			"author_name":   authorName,
+			"author_id":     authorID,
 		})
 	}
 
@@ -1129,18 +1101,18 @@ func handleGetVideosFeed(c *gin.Context) {
 			continue
 		}
 		videosForResponse = append(videosForResponse, gin.H{
-			"id": id, 
-			"title": title, 
-			"description": desc, 
-			"video_url": url, 
-			"thumbnail_url": thumb, 
-			"content_type": contentType, 
-			"likes": likes, 
-			"comments": 0, 
-			"is_liked": isLiked, 
+			"id":            id,
+			"title":         title,
+			"description":   desc,
+			"video_url":     url,
+			"thumbnail_url": thumb,
+			"content_type":  contentType,
+			"likes":         likes,
+			"comments":      0,
+			"is_liked":      isLiked,
 			"is_bookmarked": isBookmarked,
-			"author_name": authorName,
-			"author_id": authorID,
+			"author_name":   authorName,
+			"author_id":     authorID,
 		})
 	}
 

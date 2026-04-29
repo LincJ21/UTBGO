@@ -3,8 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-import 'package:aad_oauth/aad_oauth.dart';
-import 'package:aad_oauth/model/config.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
 import 'config/app_config.dart';
@@ -34,26 +32,14 @@ class _LoginScreenState extends State<LoginScreen> {
     serverClientId: AppConfig.googleWebClientId,
   );
 
-  AadOAuth? _microsoftSignIn;
-
-  @override
-  void initState() {
-    super.initState();
-    if (AppConfig.isMicrosoftEnabled) {
-      _microsoftSignIn = AadOAuth(Config(
-        tenant: AppConfig.azureTenantId,
-        clientId: AppConfig.azureClientId,
-        scope: "openid profile email offline_access",
-        redirectUri: AppConfig.azureRedirectUri,
-        navigatorKey: GlobalKey<NavigatorState>(), // No se usa si pasamos context
-      ));
-    }
-  }
-
   bool _isLoading = false;
   bool _isRegisterMode = false;
   bool _obscurePassword = true;
   bool _showOnboarding = false; // Nuevo estado para controlar la transición
+
+  static const String _studentDomain = 'utb.edu.co';
+  static const String _professorDomain = 'doc.utb.edu.co';
+  static const String _googleAspirantDomain = 'gmail.com';
 
   @override
   void dispose() {
@@ -135,7 +121,7 @@ class _LoginScreenState extends State<LoginScreen> {
             Uri.parse(AppConfig.loginUrl),
             headers: {'Content-Type': 'application/json'},
             body: json.encode({
-              'email': _emailController.text.trim(),
+              'email': _emailController.text.trim().toLowerCase(),
               'password': _passwordController.text,
             }),
           )
@@ -168,7 +154,7 @@ class _LoginScreenState extends State<LoginScreen> {
             Uri.parse(AppConfig.registerUrl),
             headers: {'Content-Type': 'application/json'},
             body: json.encode({
-              'email': _emailController.text.trim(),
+              'email': _emailController.text.trim().toLowerCase(),
               'password': _passwordController.text,
               'name': _nameController.text.trim(),
               'last_name': _lastNameController.text.trim(),
@@ -205,6 +191,15 @@ class _LoginScreenState extends State<LoginScreen> {
         setState(() {
           _isLoading = false;
         });
+        return;
+      }
+
+      final selectedEmail = googleUser.email.trim().toLowerCase();
+      if (!_hasExactDomain(selectedEmail, _googleAspirantDomain)) {
+        await _googleSignIn.signOut();
+        _showError(
+          'El acceso con Google solo está permitido para aspirantes con correo @$_googleAspirantDomain.',
+        );
         return;
       }
 
@@ -271,50 +266,6 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  /// Inicia el flujo de autenticación con Microsoft Entra ID (Acceso Institucional).
-  Future<void> _loginWithMicrosoft() async {
-    if (!AppConfig.isMicrosoftEnabled) {
-      _showError('Acceso Institucional no configurado.');
-      return;
-    }
-
-    setState(() => _isLoading = true);
-    try {
-      // Iniciar flujo OAuth de Microsoft
-      await _microsoftSignIn?.login();
-      final String? idToken = await _microsoftSignIn?.getIdToken();
-
-      if (idToken == null) {
-        debugPrint('Login Microsoft cancelado o fallido.');
-        return;
-      }
-
-      // Enviar al Identity Broker OIDC
-      final response = await http
-          .post(
-            Uri.parse(AppConfig.oidcAuthUrl('microsoft')),
-            headers: {'Content-Type': 'application/json'},
-            body: json.encode({'token': idToken}),
-          )
-          .timeout(Duration(seconds: AppConfig.httpTimeoutSeconds));
-
-      if (response.statusCode == 200) {
-        final body = json.decode(response.body);
-        await _saveTokensAndNotify(body);
-      } else {
-        final body = json.decode(response.body);
-        final msg =
-            body['error']?['message'] ?? 'Error verificando cuenta institucional';
-        _showError(msg);
-      }
-    } catch (error) {
-      debugPrint('Error Microsoft Sign-In: $error');
-      if (mounted) _showError('No se pudo conectar con Microsoft.');
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
   void _showError(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -331,6 +282,29 @@ class _LoginScreenState extends State<LoginScreen> {
       _isRegisterMode = !_isRegisterMode;
       _formKey.currentState?.reset();
     });
+  }
+
+  bool _hasExactDomain(String email, String domain) {
+    final normalized = email.trim().toLowerCase();
+    return normalized.endsWith('@$domain');
+  }
+
+  String? _validateEmail(String? value) {
+    final email = value?.trim().toLowerCase() ?? '';
+    if (email.isEmpty) {
+      return 'Ingresa tu correo';
+    }
+    if (!email.contains('@')) {
+      return 'Correo no válido';
+    }
+
+    if (_isRegisterMode &&
+        !_hasExactDomain(email, _studentDomain) &&
+        !_hasExactDomain(email, _professorDomain)) {
+      return 'Regístrate solo con @$_studentDomain o @$_professorDomain';
+    }
+
+    return null;
   }
 
   @override
@@ -365,16 +339,27 @@ class _LoginScreenState extends State<LoginScreen> {
                         fontWeight: FontWeight.bold,
                         color: primaryColor),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 30),
                   Text(
                     _isRegisterMode
-                        ? 'Regístrate para comenzar'
-                        : 'Tu plataforma de contenido educativo.',
+                        ? 'Registro para estudiantes y profesores'
+                        : 'Ingresa con tu cuenta institucional o con Google si eres aspirante.',
                     textAlign: TextAlign.center,
                     style:
                         const TextStyle(fontSize: 14, color: Colors.black54),
                   ),
-                  const SizedBox(height: 32),
+                  const SizedBox(height: 20),
+
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    
+                  ),
+                  const SizedBox(height: 20),
 
                   // Campos de nombre (solo en modo registro)
                   if (_isRegisterMode) ...[
@@ -406,13 +391,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         Icons.email_outlined),
                     keyboardType: TextInputType.emailAddress,
                     autocorrect: false,
-                    validator: (v) {
-                      if (v == null || v.trim().isEmpty) {
-                        return 'Ingresa tu correo';
-                      }
-                      if (!v.contains('@')) return 'Correo no válido';
-                      return null;
-                    },
+                    validator: _validateEmail,
                   ),
                   const SizedBox(height: 12),
 
@@ -495,32 +474,11 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const SizedBox(height: 16),
 
-                  // Botón Microsoft
-                  if (AppConfig.isMicrosoftEnabled) ...[
-                    ElevatedButton.icon(
-                      onPressed: _isLoading ? null : _loginWithMicrosoft,
-                      icon: const Icon(Icons.account_balance, size: 22),
-                      label: const Text('Acceso Institucional (Microsoft)'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.white,
-                        foregroundColor: primaryColor,
-                        side: const BorderSide(color: primaryColor),
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        textStyle: const TextStyle(
-                            fontSize: 16, fontWeight: FontWeight.w600),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12)),
-                        elevation: 0,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                  ],
-
                   // Botón Google
                   OutlinedButton.icon(
                     onPressed: _isLoading ? null : _loginWithGoogle,
                     icon: const Icon(Icons.g_mobiledata, size: 28),
-                    label: const Text('Acceso Externo (Google)'),
+                    label: const Text('Ingresa con Google'),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: Colors.grey.shade700,
                       side: BorderSide(color: Colors.grey.shade300),

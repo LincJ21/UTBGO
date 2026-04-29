@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'profile_model.dart';
@@ -86,8 +85,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     var request = http.MultipartRequest(
         'POST', Uri.parse(AppConfig.profileAvatarEndpoint));
     request.headers['Authorization'] = 'Bearer $token';
-    request.files
-        .add(await http.MultipartFile.fromPath('avatar', image.path));
+    request.files.add(await http.MultipartFile.fromPath('avatar', image.path));
 
     try {
       final response = await request.send();
@@ -107,7 +105,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _launchURL(String urlString) async {
-    final Uri url = Uri.parse(urlString.startsWith('http') ? urlString : 'https://$urlString');
+    final Uri url = Uri.parse(
+        urlString.startsWith('http') ? urlString : 'https://$urlString');
     if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
       if (mounted) {
         GlobalUIService.showError('No se pudo abrir el enlace.');
@@ -135,343 +134,407 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget _buildProfileView(BuildContext context, ProfileModel profile) {
     final isCreator = profile.role == 'profesor' || profile.role == 'admin';
 
-    final tabs = isCreator ? const [
-      Tab(text: 'STATS'),
-      Tab(text: 'PUBLICACIONES'),
-      Tab(icon: Icon(Icons.repeat)),
-      Tab(icon: Icon(Icons.bookmark_border)),
-    ] : const [
-      Tab(text: 'STATS'),
-      Tab(icon: Icon(Icons.repeat)),
-      Tab(icon: Icon(Icons.bookmark_border)),
-    ];
+    final tabs = isCreator
+        ? const [
+            Tab(text: 'STATS'),
+            Tab(text: 'PUBLICACIONES'),
+            Tab(icon: Icon(Icons.repeat)),
+            Tab(icon: Icon(Icons.bookmark_border)),
+          ]
+        : const [
+            Tab(text: 'STATS'),
+            Tab(icon: Icon(Icons.repeat)),
+            Tab(icon: Icon(Icons.bookmark_border)),
+          ];
 
-    final tabViews = isCreator ? [
-      _buildStatsTab(profile),
-      _buildPublicationsTab(profile),
-      _buildRepostsTab(profile),
-      _buildBookmarksTab(profile),
-    ] : [
-      _buildStatsTab(profile),
-      _buildRepostsTab(profile),
-      _buildBookmarksTab(profile),
-    ];
+    final tabViews = isCreator
+        ? [
+            _buildNestedStatsTab(profile),
+            _buildNestedPublicationsTab(profile),
+            _buildNestedRepostsTab(profile),
+            _buildNestedBookmarksTab(profile),
+          ]
+        : [
+            _buildNestedStatsTab(profile),
+            _buildNestedRepostsTab(profile),
+            _buildNestedBookmarksTab(profile),
+          ];
 
     return DefaultTabController(
-      length: tabs.length,
-      child: Scaffold(
-        backgroundColor: Colors.white,
-        endDrawer: _buildRightDrawer(context, profile),
-        floatingActionButton: profile.canUploadVideos
-            ? FloatingActionButton(
-                onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute(
-                    builder: (context) => const UploadVideoScreen()),
-              ),
-              backgroundColor: const Color(0xFF003399),
-              foregroundColor: Colors.white,
-              elevation: 4,
-              shape: const CircleBorder(),
-              child: const Icon(Icons.add, size: 32),
-            )
-          : null,
-      body: NestedScrollView(
-        headerSliverBuilder: (context, innerBoxIsScrolled) {
-          return [
-            // Banner + Avatar + Info
-            SliverToBoxAdapter(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Banner con degradado
-                  Stack(
-                    clipBehavior: Clip.none,
+        length: tabs.length,
+        child: Scaffold(
+          backgroundColor: Colors.white,
+          endDrawer: _buildRightDrawer(context, profile),
+          floatingActionButton: profile.canUploadVideos
+              ? FloatingActionButton(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                        builder: (context) => const UploadVideoScreen()),
+                  ),
+                  backgroundColor: const Color(0xFF003399),
+                  foregroundColor: Colors.white,
+                  elevation: 4,
+                  shape: const CircleBorder(),
+                  child: const Icon(Icons.add, size: 32),
+                )
+              : null,
+          body: NestedScrollView(
+            headerSliverBuilder: (context, innerBoxIsScrolled) {
+              return [
+                // Banner + Avatar + Info
+                SliverToBoxAdapter(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Container(
-                        height: 160,
-                        decoration: const BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [
-                              Color(0xFF001F60),
-                              Color(0xFF003399),
-                              Color(0xFF0044CC),
-                              Color(0xFF1E88E5),
-                            ],
-                            stops: [0.0, 0.4, 0.7, 1.0],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ),
-                        ),
-                        child: Stack(
-                          children: [
-                            // Decoración geométrica sutil
-                            Positioned(
-                              right: 20,
-                              top: 30,
-                              child: CustomPaint(
-                                size: const Size(120, 120),
-                                painter: _GeometricPainter(),
+                      // Banner con degradado
+                      Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          Container(
+                            height: 160,
+                            decoration: const BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [
+                                  Color(0xFF001F60),
+                                  Color(0xFF003399),
+                                  Color(0xFF0044CC),
+                                  Color(0xFF1E88E5),
+                                ],
+                                stops: [0.0, 0.4, 0.7, 1.0],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
                               ),
                             ),
-                            // Botón de atrás dinámico (si fue abierto desde otra pantalla, no desde pestañas base)
-                            if (Navigator.canPop(context))
-                              Positioned(
-                                top: 40,
-                                left: 12,
-                                child: IconButton(
-                                  icon: const Icon(Icons.arrow_back, color: Colors.white, size: 28),
-                                  onPressed: () => Navigator.pop(context),
+                            child: Stack(
+                              children: [
+                                // Decoración geométrica sutil
+                                Positioned(
+                                  right: 20,
+                                  top: 30,
+                                  child: CustomPaint(
+                                    size: const Size(120, 120),
+                                    painter: _GeometricPainter(),
+                                  ),
                                 ),
+                                // Botón de atrás dinámico (si fue abierto desde otra pantalla, no desde pestañas base)
+                                if (Navigator.canPop(context))
+                                  Positioned(
+                                    top: 40,
+                                    left: 12,
+                                    child: IconButton(
+                                      icon: const Icon(Icons.arrow_back,
+                                          color: Colors.white, size: 28),
+                                      onPressed: () => Navigator.pop(context),
+                                    ),
+                                  ),
+                                // Botón de menú y notificaciones
+                                Positioned(
+                                  top: 40,
+                                  right: 12,
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Builder(
+                                        builder: (innerContext) => IconButton(
+                                          icon: const Icon(Icons.menu,
+                                              color: Colors.white, size: 28),
+                                          onPressed: () {
+                                            Scaffold.of(innerContext)
+                                                .openEndDrawer();
+                                          },
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          // Avatar sobre el banner
+                          Positioned(
+                            bottom: -40,
+                            left: 20,
+                            child: GestureDetector(
+                              onTap: _uploadAvatar,
+                              child: Container(
+                                decoration: const BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: Colors.white,
+                                ),
+                                padding: const EdgeInsets.all(4),
+                                child: profile.avatarUrl.isNotEmpty
+                                    ? CircleAvatar(
+                                        radius: 45,
+                                        backgroundImage:
+                                            NetworkImage(profile.avatarUrl),
+                                      )
+                                    : const CircleAvatar(
+                                        radius: 45,
+                                        backgroundColor: Color(0xFF90CAF9),
+                                        child: Icon(Icons.person,
+                                            size: 50, color: Colors.white),
+                                      ),
                               ),
-                            // Botón de menú y notificaciones
-                            Positioned(
-                              top: 40,
-                              right: 12,
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      // Botón editar perfil
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: Padding(
+                          padding: const EdgeInsets.only(right: 16, top: 4),
+                          child: OutlinedButton(
+                            onPressed: () async {
+                              final didSave =
+                                  await Navigator.of(context).push<bool>(
+                                MaterialPageRoute(
+                                  builder: (_) => EditProfileScreen(
+                                    initialData: ProfileData(
+                                      name: profile
+                                          .username, // mapping username -> name because ProfileModel groups them
+                                      username: '',
+                                      bio: profile.bio ?? '',
+                                      faculty: profile.faculty ?? '',
+                                      role: profile.role,
+                                      cvlacUrl: profile.cvlacUrl,
+                                      websiteUrl: profile.websiteUrl,
+                                      avatarUrl: profile.avatarUrl.isNotEmpty
+                                          ? profile.avatarUrl
+                                          : null,
+                                    ),
+                                  ),
+                                ),
+                              );
+                              if (didSave == true) {
+                                setState(
+                                    () => _profileFuture = _fetchProfile());
+                              }
+                            },
+                            style: OutlinedButton.styleFrom(
+                              side: const BorderSide(
+                                  color: Color(0xFF003399), width: 1.5),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(20)),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 24, vertical: 8),
+                            ),
+                            child: const Text('Editar perfil',
+                                style: TextStyle(
+                                    color: Color(0xFF003399),
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600)),
+                          ),
+                        ),
+                      ),
+                      // Nombre y bio
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 20, vertical: 4),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              profile.username,
+                              style: const TextStyle(
+                                fontSize: 26,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: -0.5,
+                                color: Color(0xFF1E293B),
+                              ),
+                            ),
+                            if (profile.faculty != null &&
+                                profile.faculty!.isNotEmpty) ...[
+                              const SizedBox(height: 2),
+                              Row(
                                 children: [
-
-                                  Builder(
-                                    builder: (innerContext) => IconButton(
-                                      icon: const Icon(Icons.menu, color: Colors.white, size: 28),
-                                      onPressed: () {
-                                        Scaffold.of(innerContext).openEndDrawer();
-                                      },
+                                  const Icon(Icons.school,
+                                      size: 16, color: Color(0xFF64748B)),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: Text(
+                                      profile.faculty!,
+                                      style: const TextStyle(
+                                          fontSize: 14,
+                                          color: Color(0xFF64748B),
+                                          fontWeight: FontWeight.w500),
                                     ),
                                   ),
                                 ],
                               ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      // Avatar sobre el banner
-                      Positioned(
-                        bottom: -40,
-                        left: 20,
-                        child: GestureDetector(
-                          onTap: _uploadAvatar,
-                          child: Container(
-                            decoration: const BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: Colors.white,
-                            ),
-                            padding: const EdgeInsets.all(4),
-                            child: profile.avatarUrl.isNotEmpty
-                                ? CircleAvatar(
-                                    radius: 45,
-                                    backgroundImage:
-                                        NetworkImage(profile.avatarUrl),
-                                  )
-                                : const CircleAvatar(
-                                    radius: 45,
-                                    backgroundColor: Color(0xFF90CAF9),
-                                    child: Icon(Icons.person,
-                                        size: 50, color: Colors.white),
-                                  ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  // Botón editar perfil
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: Padding(
-                      padding: const EdgeInsets.only(right: 16, top: 4),
-                      child: OutlinedButton(
-                        onPressed: () async {
-                          final didSave = await Navigator.of(context).push<bool>(
-                            MaterialPageRoute(
-                              builder: (_) => EditProfileScreen(
-                                initialData: ProfileData(
-                                  name: profile.username, // mapping username -> name because ProfileModel groups them
-                                  username: '', 
-                                  bio: profile.bio ?? '',
-                                  faculty: profile.faculty ?? '',
-                                  role: profile.role,
-                                  cvlacUrl: profile.cvlacUrl,
-                                  websiteUrl: profile.websiteUrl,
-                                  avatarUrl: profile.avatarUrl.isNotEmpty ? profile.avatarUrl : null,
-                                ),
-                              ),
-                            ),
-                          );
-                          if (didSave == true) {
-                            setState(() => _profileFuture = _fetchProfile());
-                          }
-                        },
-                        style: OutlinedButton.styleFrom(
-                          side: const BorderSide(color: Color(0xFF003399), width: 1.5),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(20)),
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 24, vertical: 8),
-                        ),
-                        child: const Text('Editar perfil',
-                            style: TextStyle(
-                                color: Color(0xFF003399), fontSize: 14, fontWeight: FontWeight.w600)),
-                      ),
-                    ),
-                  ),
-                  // Nombre y bio
-                  Padding(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          profile.username,
-                          style: const TextStyle(
-                            fontSize: 26, 
-                            fontWeight: FontWeight.w800, 
-                            letterSpacing: -0.5, 
-                            color: Color(0xFF1E293B),
-                          ),
-                        ),
-                        if (profile.faculty != null && profile.faculty!.isNotEmpty) ...[
-                          const SizedBox(height: 2),
-                          Row(
-                            children: [
-                              const Icon(Icons.school, size: 16, color: Color(0xFF64748B)),
-                              const SizedBox(width: 6),
-                              Expanded(
-                                child: Text(
-                                  profile.faculty!,
-                                  style: const TextStyle(fontSize: 14, color: Color(0xFF64748B), fontWeight: FontWeight.w500),
-                                ),
-                              ),
                             ],
-                          ),
-                        ],
-                        const SizedBox(height: 12),
-                        Text(
-                          (profile.bio != null && profile.bio!.isNotEmpty)
-                              ? profile.bio!
-                              : (profile.role == 'profesor'
-                                  ? 'Profesor de la Universidad Tecnológica de Bolívar.'
-                                  : profile.role == 'admin'
-                                      ? 'Administrador del sistema UTBGO'
-                                      : 'Estudiante de la UTB'),
-                          style: const TextStyle(
-                              fontSize: 14, color: Color(0xFF334155), height: 1.5),
-                        ),
-                        if ((profile.cvlacUrl != null && profile.cvlacUrl!.isNotEmpty) || 
-                            (profile.websiteUrl != null && profile.websiteUrl!.isNotEmpty)) ...[
-                          const SizedBox(height: 16),
-                          Row(
-                            children: [
-                              if (profile.cvlacUrl != null && profile.cvlacUrl!.isNotEmpty)
-                                Padding(
-                                  padding: const EdgeInsets.only(right: 10),
-                                  child: Material(
-                                    color: Colors.red.withOpacity(0.1),
-                                    borderRadius: BorderRadius.circular(20),
-                                    child: InkWell(
-                                      onTap: () => _launchURL(profile.cvlacUrl!),
-                                      borderRadius: BorderRadius.circular(20),
-                                      child: Padding(
-                                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                        child: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Icon(Icons.school, size: 14, color: Colors.red[400]),
-                                            const SizedBox(width: 6),
-                                            const Text('CvLAC', style: TextStyle(fontSize: 13, color: Colors.red, fontWeight: FontWeight.w600)),
-                                          ],
+                            const SizedBox(height: 12),
+                            Text(
+                              (profile.bio != null && profile.bio!.isNotEmpty)
+                                  ? profile.bio!
+                                  : (profile.role == 'profesor'
+                                      ? 'Profesor de la Universidad Tecnológica de Bolívar.'
+                                      : profile.role == 'admin'
+                                          ? 'Administrador del sistema UTBGO'
+                                          : 'Estudiante de la UTB'),
+                              style: const TextStyle(
+                                  fontSize: 14,
+                                  color: Color(0xFF334155),
+                                  height: 1.5),
+                            ),
+                            if ((profile.cvlacUrl != null &&
+                                    profile.cvlacUrl!.isNotEmpty) ||
+                                (profile.websiteUrl != null &&
+                                    profile.websiteUrl!.isNotEmpty)) ...[
+                              const SizedBox(height: 16),
+                              Row(
+                                children: [
+                                  if (profile.cvlacUrl != null &&
+                                      profile.cvlacUrl!.isNotEmpty)
+                                    Padding(
+                                      padding: const EdgeInsets.only(right: 10),
+                                      child: Material(
+                                        color: Colors.red.withOpacity(0.1),
+                                        borderRadius: BorderRadius.circular(20),
+                                        child: InkWell(
+                                          onTap: () =>
+                                              _launchURL(profile.cvlacUrl!),
+                                          borderRadius:
+                                              BorderRadius.circular(20),
+                                          child: Padding(
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 12, vertical: 6),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(Icons.school,
+                                                    size: 14,
+                                                    color: Colors.red[400]),
+                                                const SizedBox(width: 6),
+                                                const Text('CvLAC',
+                                                    style: TextStyle(
+                                                        fontSize: 13,
+                                                        color: Colors.red,
+                                                        fontWeight:
+                                                            FontWeight.w600)),
+                                              ],
+                                            ),
+                                          ),
                                         ),
                                       ),
                                     ),
-                                  ),
-                                ),
-                              if (profile.websiteUrl != null && profile.websiteUrl!.isNotEmpty)
-                                Material(
-                                  color: Colors.blue.withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(20),
-                                  child: InkWell(
-                                    onTap: () => _launchURL(profile.websiteUrl!),
-                                    borderRadius: BorderRadius.circular(20),
-                                    child: const Padding(
-                                      padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Icon(Icons.language, size: 14, color: Colors.blue),
-                                          SizedBox(width: 6),
-                                          Text('Website', style: TextStyle(fontSize: 13, color: Colors.blue, fontWeight: FontWeight.w600)),
-                                        ],
+                                  if (profile.websiteUrl != null &&
+                                      profile.websiteUrl!.isNotEmpty)
+                                    Material(
+                                      color: Colors.blue.withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(20),
+                                      child: InkWell(
+                                        onTap: () =>
+                                            _launchURL(profile.websiteUrl!),
+                                        borderRadius: BorderRadius.circular(20),
+                                        child: const Padding(
+                                          padding: EdgeInsets.symmetric(
+                                              horizontal: 12, vertical: 6),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Icon(Icons.language,
+                                                  size: 14, color: Colors.blue),
+                                              SizedBox(width: 6),
+                                              Text('Website',
+                                                  style: TextStyle(
+                                                      fontSize: 13,
+                                                      color: Colors.blue,
+                                                      fontWeight:
+                                                          FontWeight.w600)),
+                                            ],
+                                          ),
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                ),
+                                ],
+                              ),
                             ],
-                          ),
-                        ],
-                      ],
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                  ),
+                ),
+                // Tabs
+                SliverOverlapAbsorber(
+                  handle:
+                      NestedScrollView.sliverOverlapAbsorberHandleFor(context),
+                  sliver: SliverPersistentHeader(
+                    pinned: true,
+                    delegate: _TabBarDelegate(
+                      TabBar(
+                        isScrollable: isCreator,
+                        tabAlignment:
+                            isCreator ? TabAlignment.center : TabAlignment.fill,
+                        labelPadding:
+                            const EdgeInsets.symmetric(horizontal: 24),
+                        labelStyle: const TextStyle(
+                            fontSize: 12.5, fontWeight: FontWeight.bold),
+                        unselectedLabelStyle: const TextStyle(
+                            fontSize: 12.5, fontWeight: FontWeight.w500),
+                        labelColor: Colors.black,
+                        unselectedLabelColor: Colors.grey,
+                        indicatorColor: const Color(0xFF003399),
+                        tabs: tabs,
+                      ),
                     ),
                   ),
-                  const SizedBox(height: 8),
-                ],
-              ),
-            ),
-            // Tabs
-            SliverPersistentHeader(
-              pinned: true,
-              delegate: _TabBarDelegate(
-                TabBar(
-                  isScrollable: isCreator,
-                  tabAlignment: isCreator ? TabAlignment.center : TabAlignment.fill,
-                  labelPadding: const EdgeInsets.symmetric(horizontal: 24),
-                  labelStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold),
-                  unselectedLabelStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w500),
-                  labelColor: Colors.black,
-                  unselectedLabelColor: Colors.grey,
-                  indicatorColor: const Color(0xFF003399),
-                  tabs: tabs,
                 ),
-              ),
+              ];
+            },
+            body: TabBarView(
+              children: tabViews,
             ),
-          ];
-        },
-        body: TabBarView(
-          children: tabViews,
-        ),
-      ),
-    ));
+          ),
+        ));
   }
 
   Widget _buildStatsTab(ProfileModel profile) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              Expanded(
-                  child: _statCard(
-                      Icons.video_library, profile.totalVideos.toString(), 'Publicaciones', Colors.blue)),
-              const SizedBox(width: 16),
-              Expanded(
-                  child: _statCard(Icons.people, profile.followers.toString(), 'Seguidores',
-                      Colors.deepPurple)),
-            ],
+    return _buildTabScrollView(
+      storageKey: 'profile-stats',
+      slivers: [
+        SliverPadding(
+          padding: const EdgeInsets.all(16),
+          sliver: SliverToBoxAdapter(
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                        child: _statCard(
+                            Icons.video_library,
+                            profile.totalVideos.toString(),
+                            'Publicaciones',
+                            Colors.blue)),
+                    const SizedBox(width: 16),
+                    Expanded(
+                        child: _statCard(Icons.people,
+                            profile.followers.toString(), 'Seguidores', Colors.deepPurple)),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                        child: _statCard(Icons.favorite,
+                            profile.totalLikes.toString(), 'Me gustas', Colors.pink)),
+                    const SizedBox(width: 16),
+                    Expanded(
+                        child: _statCard(
+                            Icons.visibility,
+                            profile.totalViews.toString(),
+                            'Visualizaciones',
+                            Colors.orange)),
+                  ],
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                  child: _statCard(
-                      Icons.favorite, profile.totalLikes.toString(), 'Me gustas', Colors.pink)),
-              const SizedBox(width: 16),
-              Expanded(
-                  child:
-                      _statCard(Icons.visibility, profile.totalViews.toString(), 'Visualizaciones', Colors.orange)),
-            ],
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -498,7 +561,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
               requiresAuth: true,
               fromJson: (json) {
                 final List<dynamic> videoJson = (json as List<dynamic>?) ?? [];
-                return videoJson.map((v) => VideoModel.fromBackendJson(v)).toList();
+                return videoJson
+                    .map((v) => VideoModel.fromBackendJson(v))
+                    .toList();
               },
             ),
             builder: (context, snapshot) {
@@ -506,29 +571,39 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 return const Center(child: CircularProgressIndicator());
               }
 
-              if (snapshot.hasError || !snapshot.hasData || !snapshot.data!.isSuccess) {
+              if (snapshot.hasError ||
+                  !snapshot.hasData ||
+                  !snapshot.data!.isSuccess) {
                 return const Center(
-                  child: Text('Error al cargar publicaciones', style: TextStyle(color: Colors.grey)),
+                  child: Text('Error al cargar publicaciones',
+                      style: TextStyle(color: Colors.grey)),
                 );
               }
 
               final allVideos = snapshot.data!.data ?? [];
-              
+
               // Filtrar según el sub-tab seleccionado
               List<VideoModel> filteredVideos = [];
               if (_selectedPublicationTab == 0) {
-                filteredVideos = allVideos.where((v) => v.contentType == 'video').toList();
+                filteredVideos =
+                    allVideos.where((v) => v.contentType == 'video').toList();
               } else if (_selectedPublicationTab == 1) {
-                filteredVideos = allVideos.where((v) => v.contentType == 'poll').toList();
+                filteredVideos =
+                    allVideos.where((v) => v.contentType == 'poll').toList();
               } else if (_selectedPublicationTab == 2) {
-                filteredVideos = allVideos.where((v) => v.contentType == 'flashcard').toList();
+                filteredVideos = allVideos
+                    .where((v) => v.contentType == 'flashcard')
+                    .toList();
               }
 
               if (filteredVideos.isEmpty) {
                 return Center(
                   child: Text(
-                    _selectedPublicationTab == 0 ? 'No hay videos' : 
-                    _selectedPublicationTab == 1 ? 'No hay encuestas' : 'No hay flashcards',
+                    _selectedPublicationTab == 0
+                        ? 'No hay videos'
+                        : _selectedPublicationTab == 1
+                            ? 'No hay encuestas'
+                            : 'No hay flashcards',
                     style: const TextStyle(color: Colors.grey, fontSize: 16),
                   ),
                 );
@@ -545,13 +620,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 itemCount: filteredVideos.length,
                 itemBuilder: (context, index) {
                   final video = filteredVideos[index];
-                  
+
                   return GestureDetector(
                     onTap: () {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (_) => SingleVideoScreen(video: video),
+                          builder: (_) => SingleVideoScreen(
+                            video: video,
+                            showFeedTopBar: false,
+                          ),
                         ),
                       );
                     },
@@ -574,13 +652,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           ),
                           // Overlay para que resalte el texto
                           Container(color: Colors.black.withOpacity(0.3)),
-                          
+
                           // Icono Central
                           Center(
                             child: Icon(
-                              video.contentType == 'poll' ? Icons.poll_outlined
-                              : video.contentType == 'flashcard' ? Icons.style_outlined
-                              : Icons.play_circle_outline,
+                              video.contentType == 'poll'
+                                  ? Icons.poll_outlined
+                                  : video.contentType == 'flashcard'
+                                      ? Icons.style_outlined
+                                      : Icons.play_circle_outline,
                               color: Colors.white.withOpacity(0.8),
                               size: 32,
                             ),
@@ -593,7 +673,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                const Icon(Icons.favorite, color: Colors.white, size: 12),
+                                const Icon(Icons.favorite,
+                                    color: Colors.white, size: 12),
                                 const SizedBox(width: 4),
                                 Text(
                                   '${video.likes}',
@@ -679,7 +760,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
           final list = json as List<dynamic>;
           return list.map((e) => VideoModel.fromBackendJson(e)).toList();
         },
-      ).then((response) => (response.isSuccess && response.data != null) ? response.data! : []),
+      ).then((response) =>
+          (response.isSuccess && response.data != null) ? response.data! : []),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
@@ -699,7 +781,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
           );
         }
-        
+
         final videos = snapshot.data!;
         return GridView.builder(
           padding: const EdgeInsets.all(2),
@@ -716,7 +798,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
               onTap: () {
                 Navigator.of(context).push(
                   MaterialPageRoute(
-                    builder: (_) => SingleVideoScreen(video: video),
+                    builder: (_) => SingleVideoScreen(
+                      video: video,
+                      showFeedTopBar: false,
+                    ),
                   ),
                 );
               },
@@ -727,19 +812,29 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ? Image.network(
                           video.thumbnailUrl,
                           fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) => Container(color: Colors.grey[800], child: const Icon(Icons.error)),
+                          errorBuilder: (context, error, stackTrace) =>
+                              Container(
+                                  color: Colors.grey[800],
+                                  child: const Icon(Icons.error)),
                         )
-                      : Container(color: Colors.grey[800], child: const Icon(Icons.video_library, color: Colors.white54)),
+                      : Container(
+                          color: Colors.grey[800],
+                          child: const Icon(Icons.video_library,
+                              color: Colors.white54)),
                   Positioned(
                     bottom: 4,
                     left: 4,
                     child: Row(
                       children: [
-                        const Icon(Icons.play_arrow_outlined, color: Colors.white, size: 16),
+                        const Icon(Icons.play_arrow_outlined,
+                            color: Colors.white, size: 16),
                         const SizedBox(width: 2),
                         Text(
                           '${video.views}',
-                          style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold),
                         ),
                       ],
                     ),
@@ -762,7 +857,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
           final list = json as List<dynamic>;
           return list.map((e) => VideoModel.fromBackendJson(e)).toList();
         },
-      ).then((response) => (response.isSuccess && response.data != null) ? response.data! : []),
+      ).then((response) =>
+          (response.isSuccess && response.data != null) ? response.data! : []),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
@@ -795,12 +891,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
           itemCount: videos.length,
           itemBuilder: (context, index) {
             final video = videos[index];
-            final thumbUrl = video.thumbnailUrl.isNotEmpty ? video.thumbnailUrl : video.videoUrl;
+            final thumbUrl = video.thumbnailUrl.isNotEmpty
+                ? video.thumbnailUrl
+                : video.videoUrl;
             return GestureDetector(
               onTap: () {
                 Navigator.of(context).push(
                   MaterialPageRoute(
-                    builder: (_) => SingleVideoScreen(video: video),
+                    builder: (_) => SingleVideoScreen(
+                      video: video,
+                      showFeedTopBar: false,
+                    ),
                   ),
                 );
               },
@@ -813,33 +914,48 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         ? Image.network(
                             thumbUrl,
                             fit: BoxFit.cover,
-                            errorBuilder: (context, error, stackTrace) => Container(
-                                color: Colors.grey[800],
-                                child: const Icon(Icons.play_circle_filled, color: Colors.white, size: 40)),
+                            errorBuilder: (context, error, stackTrace) =>
+                                Container(
+                                    color: Colors.grey[800],
+                                    child: const Icon(Icons.play_circle_filled,
+                                        color: Colors.white, size: 40)),
                           )
                         : Container(
                             color: Colors.grey[800],
-                            child: const Icon(Icons.play_circle_filled, color: Colors.white, size: 40)),
+                            child: const Icon(Icons.play_circle_filled,
+                                color: Colors.white, size: 40)),
                     Positioned(
-                      bottom: 0, left: 0, right: 0, height: 32,
+                      bottom: 0,
+                      left: 0,
+                      right: 0,
+                      height: 32,
                       child: Container(
                         decoration: BoxDecoration(
                           gradient: LinearGradient(
-                            colors: [Colors.transparent, Colors.black.withOpacity(0.7)],
-                            begin: Alignment.topCenter, end: Alignment.bottomCenter,
+                            colors: [
+                              Colors.transparent,
+                              Colors.black.withOpacity(0.7)
+                            ],
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
                           ),
                         ),
                       ),
                     ),
                     Positioned(
-                      bottom: 6, left: 6,
+                      bottom: 6,
+                      left: 6,
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Icon(Icons.favorite, color: Colors.white, size: 14),
+                          const Icon(Icons.favorite,
+                              color: Colors.white, size: 14),
                           const SizedBox(width: 2),
                           Text('${video.likes}',
-                              style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w500)),
+                              style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w500)),
                         ],
                       ),
                     ),
@@ -850,6 +966,526 @@ class _ProfileScreenState extends State<ProfileScreen> {
           },
         );
       },
+    );
+  }
+
+  Widget _buildNestedStatsTab(ProfileModel profile) {
+    return _buildTabScrollView(
+      storageKey: 'profile-stats',
+      slivers: [
+        SliverPadding(
+          padding: const EdgeInsets.all(16),
+          sliver: SliverToBoxAdapter(
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                        child: _statCard(
+                            Icons.video_library,
+                            profile.totalVideos.toString(),
+                            'Publicaciones',
+                            Colors.blue)),
+                    const SizedBox(width: 16),
+                    Expanded(
+                        child: _statCard(Icons.people,
+                            profile.followers.toString(), 'Seguidores', Colors.deepPurple)),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                        child: _statCard(Icons.favorite,
+                            profile.totalLikes.toString(), 'Me gustas', Colors.pink)),
+                    const SizedBox(width: 16),
+                    Expanded(
+                        child: _statCard(
+                            Icons.visibility,
+                            profile.totalViews.toString(),
+                            'Visualizaciones',
+                            Colors.orange)),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildNestedPublicationsTab(ProfileModel profile) {
+    return FutureBuilder<ApiResponse<List<VideoModel>>>(
+      future: _apiClient.get<List<VideoModel>>(
+        AppConfig.profilePublicationsEndpoint,
+        requiresAuth: true,
+        fromJson: (json) {
+          final List<dynamic> videoJson = (json as List<dynamic>?) ?? [];
+          return videoJson.map((v) => VideoModel.fromBackendJson(v)).toList();
+        },
+      ),
+      builder: (context, snapshot) {
+        final leadingSlivers = <Widget>[_buildPublicationFilterSliver()];
+
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return _buildTabScrollView(
+            storageKey: 'profile-publications-loading',
+            slivers: [
+              ...leadingSlivers,
+              const SliverFillRemaining(
+                hasScrollBody: false,
+                child: Center(child: CircularProgressIndicator()),
+              ),
+            ],
+          );
+        }
+
+        if (snapshot.hasError || !snapshot.hasData || !snapshot.data!.isSuccess) {
+          return _buildTabScrollView(
+            storageKey: 'profile-publications-error',
+            slivers: [
+              ...leadingSlivers,
+              const SliverFillRemaining(
+                hasScrollBody: false,
+                child: Center(
+                  child: Text(
+                    'Error al cargar publicaciones',
+                    style: TextStyle(color: Colors.grey),
+                  ),
+                ),
+              ),
+            ],
+          );
+        }
+
+        final allVideos = snapshot.data!.data ?? [];
+        List<VideoModel> filteredVideos = [];
+        if (_selectedPublicationTab == 0) {
+          filteredVideos =
+              allVideos.where((v) => v.contentType == 'video').toList();
+        } else if (_selectedPublicationTab == 1) {
+          filteredVideos =
+              allVideos.where((v) => v.contentType == 'poll').toList();
+        } else if (_selectedPublicationTab == 2) {
+          filteredVideos =
+              allVideos.where((v) => v.contentType == 'flashcard').toList();
+        }
+
+        if (filteredVideos.isEmpty) {
+          return _buildTabScrollView(
+            storageKey: 'profile-publications-empty-$_selectedPublicationTab',
+            slivers: [
+              ...leadingSlivers,
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: Center(
+                  child: Text(
+                    _selectedPublicationTab == 0
+                        ? 'No hay videos'
+                        : _selectedPublicationTab == 1
+                            ? 'No hay encuestas'
+                            : 'No hay flashcards',
+                    style: const TextStyle(color: Colors.grey, fontSize: 16),
+                  ),
+                ),
+              ),
+            ],
+          );
+        }
+
+        return _buildTabScrollView(
+          storageKey: 'profile-publications-$_selectedPublicationTab',
+          slivers: [
+            ...leadingSlivers,
+            SliverPadding(
+              padding: const EdgeInsets.all(2),
+              sliver: SliverGrid(
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 3,
+                  childAspectRatio: 0.65,
+                  crossAxisSpacing: 2,
+                  mainAxisSpacing: 2,
+                ),
+                delegate: SliverChildBuilderDelegate(
+                  (context, index) {
+                    final video = filteredVideos[index];
+
+                    return GestureDetector(
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => SingleVideoScreen(
+                              video: video,
+                              showFeedTopBar: false,
+                            ),
+                          ),
+                        );
+                      },
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            Container(
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF1E293B),
+                                image: video.thumbnailUrl.isNotEmpty
+                                    ? DecorationImage(
+                                        image: NetworkImage(video.thumbnailUrl),
+                                        fit: BoxFit.cover,
+                                      )
+                                    : null,
+                              ),
+                            ),
+                            Container(color: Colors.black.withOpacity(0.3)),
+                            Center(
+                              child: Icon(
+                                video.contentType == 'poll'
+                                    ? Icons.poll_outlined
+                                    : video.contentType == 'flashcard'
+                                        ? Icons.style_outlined
+                                        : Icons.play_circle_outline,
+                                color: Colors.white.withOpacity(0.8),
+                                size: 32,
+                              ),
+                            ),
+                            Positioned(
+                              bottom: 6,
+                              left: 6,
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.favorite,
+                                      color: Colors.white, size: 12),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    '${video.likes}',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                  childCount: filteredVideos.length,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildNestedRepostsTab(ProfileModel profile) {
+    return FutureBuilder<List<VideoModel>>(
+      future: _apiClient.get<List<VideoModel>>(
+        AppConfig.profileRepostsEndpoint,
+        requiresAuth: true,
+        fromJson: (json) {
+          final list = json as List<dynamic>;
+          return list.map((e) => VideoModel.fromBackendJson(e)).toList();
+        },
+      ).then((response) =>
+          (response.isSuccess && response.data != null) ? response.data! : []),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return _buildTabScrollView(
+            storageKey: 'profile-reposts-loading',
+            slivers: const [
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: Center(child: CircularProgressIndicator()),
+              ),
+            ],
+          );
+        }
+        if (snapshot.hasError || !snapshot.hasData || snapshot.data!.isEmpty) {
+          return _buildTabScrollView(
+            storageKey: 'profile-reposts-empty',
+            slivers: const [
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.repeat, size: 48, color: Colors.grey),
+                      SizedBox(height: 16),
+                      Text(
+                        'AÃºn no has reposteado nada',
+                        style: TextStyle(color: Colors.grey, fontSize: 16),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          );
+        }
+
+        final videos = snapshot.data!;
+        return _buildTabScrollView(
+          storageKey: 'profile-reposts',
+          slivers: [
+            SliverPadding(
+              padding: const EdgeInsets.all(2),
+              sliver: SliverGrid(
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 3,
+                  crossAxisSpacing: 2,
+                  mainAxisSpacing: 2,
+                  childAspectRatio: 0.7,
+                ),
+                delegate: SliverChildBuilderDelegate(
+                  (context, index) {
+                    final video = videos[index];
+                    return GestureDetector(
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => SingleVideoScreen(
+                              video: video,
+                              showFeedTopBar: false,
+                            ),
+                          ),
+                        );
+                      },
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          video.thumbnailUrl.isNotEmpty
+                              ? Image.network(
+                                  video.thumbnailUrl,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (context, error, stackTrace) =>
+                                      Container(
+                                          color: Colors.grey[800],
+                                          child: const Icon(Icons.error)),
+                                )
+                              : Container(
+                                  color: Colors.grey[800],
+                                  child: const Icon(Icons.video_library,
+                                      color: Colors.white54)),
+                          Positioned(
+                            bottom: 4,
+                            left: 4,
+                            child: Row(
+                              children: [
+                                const Icon(Icons.play_arrow_outlined,
+                                    color: Colors.white, size: 16),
+                                const SizedBox(width: 2),
+                                Text(
+                                  '${video.views}',
+                                  style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                  childCount: videos.length,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildNestedBookmarksTab(ProfileModel profile) {
+    return FutureBuilder<List<VideoModel>>(
+      future: _apiClient.get<List<VideoModel>>(
+        AppConfig.profileBookmarksEndpoint,
+        requiresAuth: true,
+        fromJson: (json) {
+          final list = json as List<dynamic>;
+          return list.map((e) => VideoModel.fromBackendJson(e)).toList();
+        },
+      ).then((response) =>
+          (response.isSuccess && response.data != null) ? response.data! : []),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return _buildTabScrollView(
+            storageKey: 'profile-bookmarks-loading',
+            slivers: const [
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: Center(child: CircularProgressIndicator()),
+              ),
+            ],
+          );
+        }
+        if (snapshot.hasError || !snapshot.hasData || snapshot.data!.isEmpty) {
+          return _buildTabScrollView(
+            storageKey: 'profile-bookmarks-empty',
+            slivers: const [
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.bookmark_border, size: 48, color: Colors.grey),
+                      SizedBox(height: 16),
+                      Text(
+                        'AÃºn no hay videos guardados',
+                        style: TextStyle(color: Colors.grey, fontSize: 16),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          );
+        }
+
+        final videos = snapshot.data!;
+        return _buildTabScrollView(
+          storageKey: 'profile-bookmarks',
+          slivers: [
+            SliverPadding(
+              padding: const EdgeInsets.all(2),
+              sliver: SliverGrid(
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 3,
+                  childAspectRatio: 0.65,
+                  crossAxisSpacing: 2,
+                  mainAxisSpacing: 2,
+                ),
+                delegate: SliverChildBuilderDelegate(
+                  (context, index) {
+                    final video = videos[index];
+                    final thumbUrl = video.thumbnailUrl.isNotEmpty
+                        ? video.thumbnailUrl
+                        : video.videoUrl;
+                    return GestureDetector(
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => SingleVideoScreen(
+                              video: video,
+                              showFeedTopBar: false,
+                            ),
+                          ),
+                        );
+                      },
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            thumbUrl.isNotEmpty
+                                ? Image.network(
+                                    thumbUrl,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (context, error, stackTrace) =>
+                                        Container(
+                                            color: Colors.grey[800],
+                                            child:
+                                                const Icon(Icons.play_circle_filled,
+                                                    color: Colors.white, size: 40)),
+                                  )
+                                : Container(
+                                    color: Colors.grey[800],
+                                    child: const Icon(Icons.play_circle_filled,
+                                        color: Colors.white, size: 40)),
+                            Positioned(
+                              bottom: 0,
+                              left: 0,
+                              right: 0,
+                              height: 32,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    colors: [
+                                      Colors.transparent,
+                                      Colors.black.withOpacity(0.7)
+                                    ],
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            Positioned(
+                              bottom: 6,
+                              left: 6,
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.favorite,
+                                      color: Colors.white, size: 14),
+                                  const SizedBox(width: 2),
+                                  Text('${video.likes}',
+                                      style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w500)),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                  childCount: videos.length,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildTabScrollView({
+    required String storageKey,
+    required List<Widget> slivers,
+  }) {
+    return Builder(
+      builder: (context) => CustomScrollView(
+        key: PageStorageKey(storageKey),
+        physics: const ClampingScrollPhysics(),
+        slivers: [
+          SliverOverlapInjector(
+            handle: NestedScrollView.sliverOverlapAbsorberHandleFor(context),
+          ),
+          ...slivers,
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPublicationFilterSliver() {
+    return SliverToBoxAdapter(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            _contentTypeIcon(index: 0, icon: Icons.videocam),
+            _contentTypeIcon(index: 1, icon: Icons.grid_on),
+            _contentTypeIcon(index: 2, icon: Icons.style),
+          ],
+        ),
+      ),
     );
   }
 
@@ -883,25 +1519,38 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         CircleAvatar(
                           radius: 26,
                           backgroundColor: Colors.white24,
-                          backgroundImage: profile.avatarUrl.isNotEmpty ? NetworkImage(profile.avatarUrl) : null,
+                          backgroundImage: profile.avatarUrl.isNotEmpty
+                              ? NetworkImage(profile.avatarUrl)
+                              : null,
                           child: profile.avatarUrl.isEmpty
                               ? Text(
-                                  profile.username.isNotEmpty ? profile.username[0].toUpperCase() : 'U',
-                                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
+                                  profile.username.isNotEmpty
+                                      ? profile.username[0].toUpperCase()
+                                      : 'U',
+                                  style: const TextStyle(
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.white),
                                 )
                               : null,
                         ),
                         const SizedBox(height: 8),
                         Text(
                           profile.username,
-                          style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          profile.role.isNotEmpty ? '${profile.role[0].toUpperCase()}${profile.role.substring(1)}' : '',
-                          style: const TextStyle(color: Colors.white70, fontSize: 13),
+                          profile.role.isNotEmpty
+                              ? '${profile.role[0].toUpperCase()}${profile.role.substring(1)}'
+                              : '',
+                          style: const TextStyle(
+                              color: Colors.white70, fontSize: 13),
                         ),
                       ],
                     ),
@@ -919,35 +1568,45 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
             if (profile.role == 'admin' || profile.role == 'moderador')
               ListTile(
-                leading: const Icon(Icons.admin_panel_settings, color: Color(0xFF0044CC), size: 28),
-                title: const Text('Panel de Administración', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                leading: const Icon(Icons.admin_panel_settings,
+                    color: Color(0xFF0044CC), size: 28),
+                title: const Text('Panel de Administración',
+                    style:
+                        TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                 subtitle: const Text('Gestionar contenido y usuarios'),
                 onTap: () {
                   Navigator.pop(context);
-                  Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AdminPanelScreen()));
+                  Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => const AdminPanelScreen()));
                 },
               ),
             if (profile.role == 'admin' || profile.role == 'moderador')
               const Divider(),
             ListTile(
-              leading: const Icon(Icons.settings_outlined, color: Colors.black87, size: 28),
-              title: const Text('Configuración', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
+              leading: const Icon(Icons.settings_outlined,
+                  color: Colors.black87, size: 28),
+              title: const Text('Configuración',
+                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
               subtitle: const Text('Privacidad y notificaciones'),
               onTap: () {
                 Navigator.pop(context);
-                Navigator.of(context).push(MaterialPageRoute(builder: (_) => SettingsScreen(onLogout: widget.onLogout)));
+                Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => SettingsScreen(onLogout: widget.onLogout)));
               },
             ),
             const Divider(),
             ListTile(
-              leading: const Icon(Icons.people_outline, color: Colors.black87, size: 28),
-              title: const Text('Mis Conexiones', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
+              leading: const Icon(Icons.people_outline,
+                  color: Colors.black87, size: 28),
+              title: const Text('Mis Conexiones',
+                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
               subtitle: const Text('Seguidores y seguidos'),
               onTap: () {
                 Navigator.pop(context);
                 final parsedId = int.tryParse(profile.id) ?? 0;
                 Navigator.of(context).push(MaterialPageRoute(
-                  builder: (_) => ConnectionsScreen(userId: parsedId, username: profile.username),
+                  builder: (_) => ConnectionsScreen(
+                      userId: parsedId, username: profile.username),
                 ));
               },
             ),
@@ -961,7 +1620,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
                 child: const Icon(Icons.logout, color: Colors.red, size: 24),
               ),
-              title: const Text('Cerrar Sesión', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 16)),
+              title: const Text('Cerrar Sesión',
+                  style: TextStyle(
+                      color: Colors.red,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16)),
               onTap: () {
                 Navigator.pop(context);
                 widget.onLogout();
@@ -1006,25 +1669,37 @@ class _GeometricPainter extends CustomPainter {
     // Curva principal
     final path1 = Path()
       ..moveTo(0, size.height * 0.4)
-      ..quadraticBezierTo(size.width * 0.5, size.height * -0.1, size.width, size.height * 0.3)
-      ..quadraticBezierTo(size.width * 1.5, size.height * 0.7, size.width * 2, size.height * 0.2);
+      ..quadraticBezierTo(
+          size.width * 0.5, size.height * -0.1, size.width, size.height * 0.3)
+      ..quadraticBezierTo(size.width * 1.5, size.height * 0.7, size.width * 2,
+          size.height * 0.2);
     canvas.drawPath(path1, strokePaint);
 
     // Curva secundaria
     final path2 = Path()
       ..moveTo(0, size.height * 0.8)
-      ..quadraticBezierTo(size.width * 0.3, size.height * 1.2, size.width * 0.8, size.height * 0.7)
-      ..quadraticBezierTo(size.width * 1.3, size.height * 0.2, size.width, size.height * -0.2);
+      ..quadraticBezierTo(size.width * 0.3, size.height * 1.2, size.width * 0.8,
+          size.height * 0.7)
+      ..quadraticBezierTo(
+          size.width * 1.3, size.height * 0.2, size.width, size.height * -0.2);
     canvas.drawPath(path2, strokePaint);
 
     // Arcos
     canvas.drawArc(
-        Rect.fromCircle(center: Offset(size.width * 0.8, size.height * 0.2), radius: 80),
-        0, 3.14, false, strokePaint);
+        Rect.fromCircle(
+            center: Offset(size.width * 0.8, size.height * 0.2), radius: 80),
+        0,
+        3.14,
+        false,
+        strokePaint);
 
     canvas.drawArc(
-        Rect.fromCircle(center: Offset(size.width * 0.1, size.height * 0.1), radius: 120),
-        0.5, 2.5, false, strokePaint);
+        Rect.fromCircle(
+            center: Offset(size.width * 0.1, size.height * 0.1), radius: 120),
+        0.5,
+        2.5,
+        false,
+        strokePaint);
   }
 
   @override

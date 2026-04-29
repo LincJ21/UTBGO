@@ -21,6 +21,9 @@ services:
       - JWT_SECRET_KEY=${JWT_SECRET_KEY}
       - FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID}
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - STUDENT_DOMAIN=${STUDENT_DOMAIN:-utb.edu.co}
+      - PROFESSOR_DOMAIN=${PROFESSOR_DOMAIN:-doc.utb.edu.co}
+      - ASPIRANT_GOOGLE_DOMAIN=${ASPIRANT_GOOGLE_DOMAIN:-gmail.com}
       - INSTITUTIONAL_DOMAIN=${INSTITUTIONAL_DOMAIN:-utb.edu.co}
       - ADMIN_DOMAIN=${ADMIN_DOMAIN:-admin.utb.edu.co}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-https://app.utbgo.edu.co,http://localhost:3000}

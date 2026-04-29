@@ -20,14 +20,14 @@ type User struct {
 	CvlacURL     string    `json:"cvlac_url,omitempty"`
 	WebsiteURL   string    `json:"website_url,omitempty"`
 	PasswordHash string    `json:"-"` // Nunca serializar
-	CreatedAt          time.Time `json:"created_at"`
-	LastLogin          time.Time `json:"last_login,omitempty"`
-	
+	CreatedAt    time.Time `json:"created_at"`
+	LastLogin    time.Time `json:"last_login,omitempty"`
+
 	// Dashboard Stats
-	FollowersCount     int       `json:"followers"`
-	TotalLikesReceived int       `json:"total_likes"`
-	TotalViews         int       `json:"total_views"`
-	TotalVideos        int       `json:"total_videos"`
+	FollowersCount     int `json:"followers"`
+	TotalLikesReceived int `json:"total_likes"`
+	TotalViews         int `json:"total_views"`
+	TotalVideos        int `json:"total_videos"`
 
 	// Social Graph
 	IsFollowing bool `json:"is_following"`
@@ -47,25 +47,31 @@ type Profile struct {
 
 // PublicProfile representa la versión pública del perfil de un usuario, expuesta para que otros usuarios la vean.
 type PublicProfile struct {
-	UserID     int       `json:"user_id"`
-	Username   string    `json:"username"`
-	AvatarURL  string    `json:"avatar_url,omitempty"`
-	Bio        string    `json:"bio,omitempty"`
-	Faculty    string    `json:"faculty,omitempty"`
-	CvlacURL   string    `json:"cvlac_url,omitempty"`
-	WebsiteURL string    `json:"website_url,omitempty"`
-	Role       string    `json:"role"`
-	Interests  []string  `json:"interests,omitempty"`
+	UserID      int      `json:"user_id"`
+	Username    string   `json:"username"`
+	AvatarURL   string   `json:"avatar_url,omitempty"`
+	Bio         string   `json:"bio,omitempty"`
+	Faculty     string   `json:"faculty,omitempty"`
+	CvlacURL    string   `json:"cvlac_url,omitempty"`
+	WebsiteURL  string   `json:"website_url,omitempty"`
+	Role        string   `json:"role"`
+	Interests   []string `json:"interests,omitempty"`
 	IsFollowing bool     `json:"is_following"`
+
+	// Public dashboard stats
+	FollowersCount     int `json:"followers"`
+	TotalLikesReceived int `json:"total_likes"`
+	TotalViews         int `json:"total_views"`
+	TotalVideos        int `json:"total_videos"`
 }
 
 // ConnectionUser representa una vista minimalista de un usuario para las listas de seguidores/seguidos.
 type ConnectionUser struct {
-	UserID     int       `json:"user_id"`
-	Username   string    `json:"username"`
-	AvatarURL  string    `json:"avatar_url,omitempty"`
-	Role       string    `json:"role"`
-	IsFollowing bool     `json:"is_following"`
+	UserID      int    `json:"user_id"`
+	Username    string `json:"username"`
+	AvatarURL   string `json:"avatar_url,omitempty"`
+	Role        string `json:"role"`
+	IsFollowing bool   `json:"is_following"`
 }
 
 // ConnectionsResponse agrupa los seguidores y seguidos de un perfil.
@@ -103,6 +109,30 @@ type Video struct {
 	CreatedAt    time.Time `json:"created_at"`
 	ContentType  string    `json:"content_type"`
 	Category     string    `json:"category"`
+}
+
+// PublicVideo representa la versión pública y no personalizada de un contenido.
+type PublicVideo struct {
+	ID           int       `json:"id"`
+	Title        string    `json:"title"`
+	Description  string    `json:"description"`
+	AuthorID     int       `json:"author_id"`
+	AuthorName   string    `json:"author_name,omitempty"`
+	VideoURL     string    `json:"video_url"`
+	ThumbnailURL string    `json:"thumbnail_url"`
+	Likes        int       `json:"likes"`
+	Comments     int       `json:"comments"`
+	CreatedAt    time.Time `json:"created_at"`
+	ContentType  string    `json:"content_type"`
+	Category     string    `json:"category"`
+}
+
+// VideoViewerState representa el estado personalizado del visitante sobre un contenido.
+type VideoViewerState struct {
+	VideoID      int  `json:"id"`
+	IsLiked      bool `json:"is_liked"`
+	IsBookmarked bool `json:"is_bookmarked"`
+	IsReposted   bool `json:"is_reposted"`
 }
 
 // Comment representa un comentario en un video.
@@ -337,6 +367,9 @@ type VideoRepository interface {
 	// GetByAuthor obtiene todos los contenidos publicados por un autor específico.
 	GetByAuthor(ctx context.Context, authorID int, userID *int) ([]Video, error)
 
+	// GetPublicByAuthor obtiene el contenido publicado por un autor con contrato público, sin estado personalizado del visitante.
+	GetPublicByAuthor(ctx context.Context, authorID int) ([]PublicVideo, error)
+
 	// GetTrends obtiene los hashtags más populares dentro de la aplicación.
 	GetTrends(ctx context.Context, limit int) ([]TrendingTag, error)
 }
@@ -348,6 +381,9 @@ type InteractionRepository interface {
 
 	// IsLiked verifica si un usuario dio like a un video.
 	IsLiked(ctx context.Context, userID, videoID int) (bool, error)
+
+	// IsReposted verifica si un usuario ya reposteo un video.
+	IsReposted(ctx context.Context, userID, videoID int) (bool, error)
 }
 
 // BookmarkRepository define las operaciones de persistencia para favoritos.

@@ -147,8 +147,11 @@ func (ib *IdentityBroker) Authenticate(ctx context.Context, providerName, rawIDT
 		"duration_ms", time.Since(startTime).Milliseconds(),
 	)
 
-	// 3. Mapear rol según dominio del correo y proveedor
-	roleCode := ib.roleMapper.MapRole(claims.Email, claims.Provider)
+	// 3. Validar proveedor/dominio y resolver rol permitido
+	roleCode, apiErr := ib.roleMapper.RoleForOIDC(claims.Email, claims.Provider)
+	if apiErr != nil {
+		return nil, apiErr
+	}
 
 	// 4. Crear o actualizar usuario en la base de datos
 	userID, err := ib.upsertUser(ctx, claims, roleCode)
@@ -197,7 +200,7 @@ func (ib *IdentityBroker) Authenticate(ctx context.Context, providerName, rawIDT
 // Usa getOrCreateUser existente y luego actualiza el rol si es necesario.
 func (ib *IdentityBroker) upsertUser(ctx context.Context, claims *OIDCClaims, roleCode string) (int, error) {
 	// Usar la función existente para crear/buscar usuario
-	userID, err := getOrCreateUser(ctx, claims.Email, claims.Name, claims.Picture)
+	userID, err := getOrCreateUser(ctx, claims.Email, claims.Name, claims.Picture, roleCode)
 	if err != nil {
 		return 0, fmt.Errorf("error en getOrCreateUser: %w", err)
 	}

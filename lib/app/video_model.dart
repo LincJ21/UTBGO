@@ -67,10 +67,12 @@ class VideoModel {
       thumbnailUrl: json['thumbnail_url'] ?? '',
       description: json['description'] ?? '',
       authorName: json['author_name'] ?? 'Profesor UTB',
-      authorId: json['author_id'] != null ? int.tryParse(json['author_id'].toString()) ?? 0 : 0,
+      authorId: json['author_id'] != null
+          ? int.tryParse(json['author_id'].toString()) ?? 0
+          : 0,
       contentType: json['content_type'] ?? 'video',
       category: json['category'] ?? 'General',
-      createdAt: json['created_at'] != null 
+      createdAt: json['created_at'] != null
           ? DateTime.tryParse(json['created_at']) ?? DateTime.now()
           : DateTime.now(),
       likes: json['likes'] ?? 0,
@@ -91,7 +93,9 @@ class VideoModel {
       thumbnailUrl: json['thumbnail_url'] ?? '',
       description: json['description'] ?? 'Sin descripción',
       authorName: json['author_name'] ?? 'Profesor UTB',
-      authorId: json['author_id'] is int ? json['author_id'] : int.tryParse(json['author_id']?.toString() ?? '0') ?? 0,
+      authorId: json['author_id'] is int
+          ? json['author_id']
+          : int.tryParse(json['author_id']?.toString() ?? '0') ?? 0,
       contentType: json['content_type'] ?? 'video',
       category: json['category'] ?? 'General',
       createdAt: json['created_at'] != null
@@ -106,16 +110,44 @@ class VideoModel {
     );
   }
 
+  /// Constructor para contratos públicos del backend sin estado personalizado del visitante.
+  factory VideoModel.fromPublicBackendJson(Map<String, dynamic> json) {
+    return VideoModel(
+      id: (json['id'] ?? 0).toString(),
+      title: json['title'] ?? 'Sin Título',
+      videoUrl: json['video_url'] ?? '',
+      thumbnailUrl: json['thumbnail_url'] ?? '',
+      description: json['description'] ?? 'Sin descripción',
+      authorName: json['author_name'] ?? 'Profesor UTB',
+      authorId: json['author_id'] is int
+          ? json['author_id']
+          : int.tryParse(json['author_id']?.toString() ?? '0') ?? 0,
+      contentType: json['content_type'] ?? 'video',
+      category: json['category'] ?? 'General',
+      createdAt: json['created_at'] != null
+          ? DateTime.tryParse(json['created_at']) ?? DateTime.now()
+          : DateTime.now(),
+      likes: json['likes'] ?? 0,
+      comments: json['comments'] ?? 0,
+      views: json['views'] ?? 0,
+      isLiked: false,
+      isBookmarked: false,
+      isReposted: false,
+    );
+  }
+
   /// Constructor para crear un [VideoModel] desde el JSON específico de la API de Pexels.
   factory VideoModel.fromPexelsJson(Map<String, dynamic> json) {
     final List<dynamic> videoFiles = json['video_files'] ?? [];
     String url = '';
     // Buscamos un video de calidad decente pero no excesiva
-    final sdVideo = videoFiles.firstWhere((file) => file['quality'] == 'sd', orElse: () => null);
+    final sdVideo = videoFiles.firstWhere((file) => file['quality'] == 'sd',
+        orElse: () => null);
     if (sdVideo != null) {
       url = sdVideo['link'] ?? '';
     } else if (videoFiles.isNotEmpty) {
-      url = videoFiles.first['link'] ?? ''; // Fallback al primer video disponible
+      url =
+          videoFiles.first['link'] ?? ''; // Fallback al primer video disponible
     }
 
     final author = json['user']?['name'] ?? 'Desconocido';
@@ -135,4 +167,3 @@ class VideoModel {
     );
   }
 }
- 

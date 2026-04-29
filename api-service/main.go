@@ -85,6 +85,13 @@ func AuthMiddleware() gin.HandlerFunc {
 				c.Abort()
 				return
 			}
+			tokenType, ok := claims["type"].(string)
+			if !ok || tokenType != "access" {
+				Logger.Warn("Token JWT con tipo inválido", "type", claims["type"])
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token type"})
+				c.Abort()
+				return
+			}
 			userID, ok := claims["user_id"].(float64)
 			if !ok {
 				c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token claims"})
@@ -124,8 +131,10 @@ func OptionalAuthMiddleware() gin.HandlerFunc {
 		if err == nil && token.Valid {
 			if claims, ok := token.Claims.(jwt.MapClaims); ok {
 				if _, hasExp := claims["exp"]; hasExp {
-					if userID, ok := claims["user_id"].(float64); ok {
-						c.Set("userID", userID)
+					if tokenType, ok := claims["type"].(string); ok && tokenType == "access" {
+						if userID, ok := claims["user_id"].(float64); ok {
+							c.Set("userID", userID)
+						}
 					}
 				}
 			}
@@ -139,26 +148,12 @@ func OptionalAuthMiddleware() gin.HandlerFunc {
 // Si un proveedor no tiene credenciales, se omite sin error (degradación graciosa).
 func initIdentityBroker() {
 	ctx := context.Background()
-	GlobalRoleMapper = NewRoleMapper() // Usar la versión sin argumentos y asignar al global
+	GlobalRoleMapper = NewRoleMapper()
 	var providers []OIDCProvider
 
-	// --- Proveedor Google OIDC ---
-	googleProvider, err := NewGoogleOIDCProvider(ctx)
-	if err != nil {
-		Logger.Warn("Identity Broker: Google OIDC no disponible", "error", err)
-	} else {
-		providers = append(providers, googleProvider)
-	}
-
-	// --- Proveedor Microsoft Entra ID ---
-	msProvider, err := NewMicrosoftOIDCProvider(ctx)
-	if err != nil {
-		Logger.Warn("Identity Broker: Microsoft Entra ID no disponible", "error", err)
-	} else {
-		providers = append(providers, msProvider)
-	}
-
-	// --- Proveedor Firebase Auth ---
+	// La política actual solo permite acceso externo por Google/Firebase
+	// para aspirantes con correo @gmail.com. Microsoft y Google OIDC directo
+	// se dejan fuera del broker para reducir superficie de ataque.
 	firebaseProvider, err := NewFirebaseOIDCProvider(ctx)
 	if err != nil {
 		Logger.Warn("Identity Broker: Firebase Auth no disponible", "error", err)
@@ -207,8 +202,8 @@ func main() {
 	// Cargar variables de entorno desde el archivo .env
 	// En producción (Render, Railway, etc.) las variables vienen del sistema,
 	// así que no importa si .env no existe.
-	_ = godotenv.Load("../.env")   // Desarrollo: .env en la raíz del monorepo UTBGO
-	_ = godotenv.Load(".env")      // Producción/Docker: .env en el mismo directorio
+	_ = godotenv.Load("../.env") // Desarrollo: .env en la raíz del monorepo UTBGO
+	_ = godotenv.Load(".env")    // Producción/Docker: .env en el mismo directorio
 	// Si ninguno existe, usa variables de entorno del sistema (lo normal en la nube)
 
 	// HAL-005: Advertencia de seguridad si se ejecuta en modo debug
@@ -475,9 +470,9 @@ func main() {
 			auth.POST("/google/verify", handleVerifyToken) // OAuth Google (legacy)
 
 			// --- Identity Broker OIDC ---
-			// Endpoint unificado para autenticación con cualquier proveedor OIDC.
-			// POST /api/v1/auth/oidc/:provider  (google, microsoft)
-			// GET  /api/v1/auth/oidc/providers  (listar proveedores disponibles)
+			// Política actual: solo Firebase/Google para aspirantes con Gmail.
+			// POST /api/v1/auth/oidc/:provider
+			// GET  /api/v1/auth/oidc/providers
 			oidc := auth.Group("/oidc")
 			{
 				oidc.POST("/:provider", handleOIDCAuth)     // Autenticación OIDC unificada
@@ -492,6 +487,7 @@ func main() {
 			videos.GET("/search", handleSearchV2)
 			videos.POST("/upload", AuthMiddleware(), RequireProfessor(), handleUploadVideoV2)
 			videos.POST("/:id/view", AuthMiddleware(), handleRegisterView)
+			videos.GET("/:id/viewer-state", AuthMiddleware(), handleGetVideoViewerStateV2)
 			videos.POST("/:id/like", AuthMiddleware(), handleToggleLikeV2)
 			videos.POST("/:id/bookmark", AuthMiddleware(), handleToggleBookmarkV2)
 			videos.POST("/:id/repost", AuthMiddleware(), handleToggleRepost)
@@ -513,8 +509,6 @@ func main() {
 			recommend.GET("/similar/:id", handleGetSimilarRecommendations)
 		}
 
-
-
 		// Perfil
 		profile := v1.Group("/profile")
 		{
@@ -535,25 +529,25 @@ func main() {
 		// --- Flashcards ---
 		flashcards := v1.Group("/flashcards")
 		{
-			flashcards.POST("", AuthMiddleware(), RequireProfessor(), handleCreateFlashcard)   // Crear flashcard
-			flashcards.GET("/:id", handleGetFlashcard)                     // Obtener flashcard
+			flashcards.POST("", AuthMiddleware(), RequireProfessor(), handleCreateFlashcard) // Crear flashcard
+			flashcards.GET("/:id", handleGetFlashcard)                                       // Obtener flashcard
 		}
 
 		// --- Encuestas ---
 		polls := v1.Group("/polls")
 		{
-			polls.POST("", AuthMiddleware(), RequireProfessor(), handleCreatePoll)    // Crear encuesta
-			polls.GET("/:id", AuthMiddleware(), handleGetPoll)    // Obtener encuesta
-			polls.POST("/:id/vote", AuthMiddleware(), handleVotePoll) // Votar
+			polls.POST("", AuthMiddleware(), RequireProfessor(), handleCreatePoll) // Crear encuesta
+			polls.GET("/:id", AuthMiddleware(), handleGetPoll)                     // Obtener encuesta
+			polls.POST("/:id/vote", AuthMiddleware(), handleVotePoll)              // Votar
 		}
 
 		// --- Notificaciones ---
 		notifications := v1.Group("/notifications")
 		notifications.Use(AuthMiddleware())
 		{
-			notifications.GET("", handleGetNotifications)                // Listar notificaciones
-			notifications.GET("/unread-count", handleGetUnreadCount)    // Conteo de no leídas
-			notifications.PATCH("/:id/read", handleMarkNotificationRead) // Marcar una como leída
+			notifications.GET("", handleGetNotifications)                    // Listar notificaciones
+			notifications.GET("/unread-count", handleGetUnreadCount)         // Conteo de no leídas
+			notifications.PATCH("/:id/read", handleMarkNotificationRead)     // Marcar una como leída
 			notifications.PATCH("/read-all", handleMarkAllNotificationsRead) // Marcar todas como leídas
 		}
 

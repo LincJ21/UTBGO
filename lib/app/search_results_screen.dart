@@ -3,7 +3,9 @@ import 'package:shimmer/shimmer.dart';
 import 'video_model.dart';
 import 'config/app_config.dart';
 import 'config/api_client.dart';
+import 'main_navigation_page.dart';
 import 'single_video_screen.dart';
+import 'widgets/main_bottom_nav_bar.dart';
 
 /// Pantalla que busca y muestra videos que coinciden con un término de búsqueda.
 /// Maneja su propio estado de carga, error y "sin resultados", incluyendo pull-to-refresh.
@@ -49,7 +51,8 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
     final queryParams = <String, String>{'q': searchQuery};
     if (_dateFilter.isNotEmpty) queryParams['date'] = _dateFilter;
     if (_authorFilter.isNotEmpty) queryParams['author'] = _authorFilter;
-    if (widget.categoryFilter.isNotEmpty) queryParams['category'] = widget.categoryFilter;
+    if (widget.categoryFilter.isNotEmpty)
+      queryParams['category'] = widget.categoryFilter;
 
     final Uri uri = Uri.parse(AppConfig.videosSearchEndpoint)
         .replace(queryParameters: queryParams);
@@ -58,7 +61,8 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
       uri.toString(),
       requiresAuth: true,
       fromJson: (json) {
-        final List<dynamic> videoJson = (json['videos'] as List<dynamic>?) ?? [];
+        final List<dynamic> videoJson =
+            (json['videos'] as List<dynamic>?) ?? [];
         return videoJson.map((v) => VideoModel.fromBackendJson(v)).toList();
       },
     );
@@ -104,7 +108,8 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                     style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 20),
-                  const Text('Fecha de publicación', style: TextStyle(fontWeight: FontWeight.w600)),
+                  const Text('Fecha de publicación',
+                      style: TextStyle(fontWeight: FontWeight.w600)),
                   const SizedBox(height: 10),
                   Wrap(
                     spacing: 10,
@@ -116,14 +121,17 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                     ],
                   ),
                   const SizedBox(height: 20),
-                  const Text('Autor', style: TextStyle(fontWeight: FontWeight.w600)),
+                  const Text('Autor',
+                      style: TextStyle(fontWeight: FontWeight.w600)),
                   const SizedBox(height: 10),
                   TextField(
                     controller: TextEditingController(text: _authorFilter),
                     decoration: InputDecoration(
                       hintText: 'Ej. Juan Pérez',
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10)),
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 12),
                     ),
                     onChanged: (val) => _authorFilter = val,
                   ),
@@ -138,9 +146,11 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                       },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF003399),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10)),
                       ),
-                      child: const Text('Aplicar filtros', style: TextStyle(color: Colors.white, fontSize: 16)),
+                      child: const Text('Aplicar filtros',
+                          style: TextStyle(color: Colors.white, fontSize: 16)),
                     ),
                   ),
                   const SizedBox(height: 24),
@@ -158,7 +168,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
     return ChoiceChip(
       label: Text(label),
       selected: isSelected,
-      selectedColor: const Color(0xFF003399).withOpacity(0.2),
+      selectedColor: const Color(0xFF003399).withValues(alpha: 0.2),
       labelStyle: TextStyle(
         color: isSelected ? const Color(0xFF003399) : Colors.black87,
         fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
@@ -195,6 +205,18 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
         ],
       ),
       body: _buildBody(),
+      bottomNavigationBar: MainBottomNavBar(
+        onTap: _goToMainTab,
+      ),
+    );
+  }
+
+  void _goToMainTab(int index) {
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(
+        builder: (_) => MainNavigationPage(initialSelectedIndex: index),
+      ),
+      (route) => false,
     );
   }
 
@@ -214,99 +236,100 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
     return RefreshIndicator(
       onRefresh: _performSearch,
       color: const Color(0xFF003399),
-      child: ListView.builder(
-        padding: const EdgeInsets.symmetric(vertical: 8),
+      child: GridView.builder(
+        padding: const EdgeInsets.fromLTRB(2, 8, 2, 12),
         physics: const AlwaysScrollableScrollPhysics(),
         itemCount: _searchResults.length,
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 3,
+          childAspectRatio: 0.72,
+          crossAxisSpacing: 2,
+          mainAxisSpacing: 2,
+        ),
         itemBuilder: (context, index) {
           final video = _searchResults[index];
-          return _buildVideoCard(video);
+          return _buildResultTile(video);
         },
       ),
     );
   }
 
-  Widget _buildVideoCard(VideoModel video) {
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: () {
-          // --- NUEVO: Navegación real al video ---
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => SingleVideoScreen(video: video),
-            ),
-          );
-        },
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _buildResultTile(VideoModel video) {
+    final previewUrl = _resolvePreviewUrl(video);
+
+    return GestureDetector(
+      onTap: () {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) =>
+                SingleVideoScreen(video: video, showFeedTopBar: false),
+          ),
+        );
+      },
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(4),
+        child: Stack(
+          fit: StackFit.expand,
           children: [
-            // Thumbnail
-            SizedBox(
-              width: 140,
-              height: 100,
-              child: video.thumbnailUrl.isNotEmpty
-                  ? Image.network(
-                      video.thumbnailUrl,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) =>
-                          _buildFallbackThumbnail(),
-                    )
-                  : _buildFallbackThumbnail(),
+            Container(
+              decoration: BoxDecoration(
+                color: const Color(0xFF1E293B),
+                image: previewUrl != null && previewUrl.isNotEmpty
+                    ? DecorationImage(
+                        image: NetworkImage(previewUrl),
+                        fit: BoxFit.cover,
+                      )
+                    : null,
+              ),
+              child: previewUrl == null || previewUrl.isEmpty
+                  ? _buildFallbackThumbnail()
+                  : null,
             ),
-            // Información
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      video.title,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                        color: Colors.black87,
-                      ),
+            Container(color: Colors.black.withValues(alpha: 0.28)),
+            Center(
+              child: Icon(
+                video.contentType == 'encuesta' || video.contentType == 'poll'
+                    ? Icons.poll_outlined
+                    : video.contentType == 'flashcard'
+                        ? Icons.style_outlined
+                        : Icons.play_circle_outline,
+                color: Colors.white.withValues(alpha: 0.82),
+                size: 32,
+              ),
+            ),
+            Positioned(
+              bottom: 6,
+              left: 6,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.favorite, color: Colors.white, size: 12),
+                  const SizedBox(width: 4),
+                  Text(
+                    '${video.likes}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      video.description,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey[600],
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        const Icon(Icons.favorite, color: Colors.red, size: 14),
-                        const SizedBox(width: 4),
-                        Text(
-                          video.likes.toString(),
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey[700],
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ],
         ),
       ),
     );
+  }
+
+  String? _resolvePreviewUrl(VideoModel video) {
+    if (video.thumbnailUrl.isNotEmpty) {
+      return video.thumbnailUrl;
+    }
+    if (video.contentType == 'imagen' && video.videoUrl.isNotEmpty) {
+      return video.videoUrl;
+    }
+    return null;
   }
 
   Widget _buildFallbackThumbnail() {
@@ -316,7 +339,8 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.image_not_supported, color: Colors.grey.shade400, size: 32),
+            Icon(Icons.image_not_supported,
+                color: Colors.grey.shade400, size: 32),
             const SizedBox(height: 4),
             Text(
               'Sin portada',
@@ -356,9 +380,9 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
           ),
           const SizedBox(height: 24),
           ElevatedButton.icon(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => _goToMainTab(0),
             icon: const Icon(Icons.arrow_back),
-            label: const Text('Volver al Feed'),
+            label: const Text('Volver a Explorar'),
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF003399),
               foregroundColor: Colors.white,
@@ -409,78 +433,44 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
   }
 
   Widget _buildShimmerLoading() {
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+    return GridView.builder(
+      padding: const EdgeInsets.fromLTRB(2, 8, 2, 12),
       itemCount: 6, // Mostrar 6 placeholders
+      physics: const AlwaysScrollableScrollPhysics(),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3,
+        childAspectRatio: 0.72,
+        crossAxisSpacing: 2,
+        mainAxisSpacing: 2,
+      ),
       itemBuilder: (context, index) {
-        return Card(
-          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          elevation: 0,
-          color: Colors.transparent,
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Shimmer.fromColors(
-                baseColor: Colors.grey[300]!,
-                highlightColor: Colors.grey[100]!,
-                child: Container(
-                  width: 140,
-                  height: 100,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
+        return Shimmer.fromColors(
+          baseColor: Colors.grey[300]!,
+          highlightColor: Colors.grey[100]!,
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: Container(color: Colors.white),
+                ),
+                Positioned(
+                  left: 8,
+                  bottom: 8,
+                  child: Container(
+                    width: 36,
+                    height: 10,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
                   ),
                 ),
-              ),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Shimmer.fromColors(
-                        baseColor: Colors.grey[300]!,
-                        highlightColor: Colors.grey[100]!,
-                        child: Container(
-                          width: double.infinity,
-                          height: 16,
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Shimmer.fromColors(
-                        baseColor: Colors.grey[300]!,
-                        highlightColor: Colors.grey[100]!,
-                        child: Container(
-                          width: 150,
-                          height: 12,
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      Shimmer.fromColors(
-                        baseColor: Colors.grey[300]!,
-                        highlightColor: Colors.grey[100]!,
-                        child: Container(
-                          width: 40,
-                          height: 12,
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         );
       },

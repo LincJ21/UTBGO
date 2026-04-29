@@ -194,6 +194,8 @@ func handleLoginV2(c *gin.Context) {
 		return
 	}
 
+	req.Email = GlobalRoleMapper.NormalizeEmail(req.Email)
+
 	// Buscar usuario por email
 	user, err := Repos.Users.FindByEmail(c.Request.Context(), req.Email)
 	if err != nil {
@@ -210,6 +212,13 @@ func handleLoginV2(c *gin.Context) {
 	// Verificar contraseña
 	if !CheckPassword(req.Password, user.PasswordHash) {
 		RespondError(c, ErrInvalidCredentials())
+		return
+	}
+
+	if !GlobalRoleMapper.CanUsePasswordLogin(user.Role) {
+		RespondError(c, ErrForbidden(
+			"Los aspirantes deben iniciar sesión con Google usando un correo @gmail.com",
+		))
 		return
 	}
 
@@ -269,6 +278,16 @@ func handleRegisterV2(c *gin.Context) {
 		return
 	}
 
+	req.Email = GlobalRoleMapper.NormalizeEmail(req.Email)
+	req.Name = strings.TrimSpace(req.Name)
+	req.LastName = strings.TrimSpace(req.LastName)
+
+	roleCode, apiErr := GlobalRoleMapper.RoleForRegistration(req.Email)
+	if apiErr != nil {
+		RespondError(c, apiErr)
+		return
+	}
+
 	// Verificar si el email ya está registrado
 	existing, err := Repos.Users.FindByEmail(c.Request.Context(), req.Email)
 	if err != nil {
@@ -293,6 +312,7 @@ func handleRegisterV2(c *gin.Context) {
 	user := &User{
 		Email:        req.Email,
 		PasswordHash: hashed,
+		Role:         roleCode,
 	}
 	userID, err := Repos.Users.Create(c.Request.Context(), user)
 	if err != nil {
@@ -304,8 +324,8 @@ func handleRegisterV2(c *gin.Context) {
 	// Crear perfil
 	profile := &Profile{
 		UserID:   userID,
-		Name:     strings.TrimSpace(req.Name),
-		LastName: strings.TrimSpace(req.LastName),
+		Name:     req.Name,
+		LastName: req.LastName,
 	}
 	if err := Repos.Profiles.Create(c.Request.Context(), profile); err != nil {
 		Logger.Error("Error creando perfil", "error", err)
@@ -592,6 +612,60 @@ func handleToggleLikeV2(c *gin.Context) {
 				actorName, videoID)
 		}()
 	}
+}
+
+// handleGetVideoViewerStateV2 devuelve el estado personalizado del visitante
+// para un video concreto, manteniendo separado el contrato publico del contenido.
+func handleGetVideoViewerStateV2(c *gin.Context) {
+	userID := getUserIDFromContext(c)
+	if userID == 0 {
+		RespondError(c, ErrUnauthorized())
+		return
+	}
+
+	videoID, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		RespondError(c, ErrInvalidInput("id", "ID de video inválido"))
+		return
+	}
+
+	exists, err := Repos.Videos.ExistsByID(c.Request.Context(), videoID)
+	if err != nil {
+		RespondError(c, ErrInternal())
+		return
+	}
+	if !exists {
+		RespondError(c, ErrNotFound("Video"))
+		return
+	}
+
+	isLiked, err := Repos.Interactions.IsLiked(c.Request.Context(), userID, videoID)
+	if err != nil {
+		Logger.Error("Error consultando estado like", "error", err, "user_id", userID, "video_id", videoID)
+		RespondError(c, ErrDatabase("Error consultando estado del video"))
+		return
+	}
+
+	isBookmarked, err := Repos.Bookmarks.IsBookmarked(c.Request.Context(), userID, videoID)
+	if err != nil {
+		Logger.Error("Error consultando estado bookmark", "error", err, "user_id", userID, "video_id", videoID)
+		RespondError(c, ErrDatabase("Error consultando estado del video"))
+		return
+	}
+
+	isReposted, err := Repos.Interactions.IsReposted(c.Request.Context(), userID, videoID)
+	if err != nil {
+		Logger.Error("Error consultando estado repost", "error", err, "user_id", userID, "video_id", videoID)
+		RespondError(c, ErrDatabase("Error consultando estado del video"))
+		return
+	}
+
+	RespondSuccess(c, VideoViewerState{
+		VideoID:      videoID,
+		IsLiked:      isLiked,
+		IsBookmarked: isBookmarked,
+		IsReposted:   isReposted,
+	})
 }
 
 // handleToggleBookmarkV2 maneja bookmarks usando repositorios.
@@ -1023,12 +1097,12 @@ func handleGetTrends(c *gin.Context) {
 		RespondError(c, ErrDatabase("Error al obtener tendencias"))
 		return
 	}
-	
+
 	// Asegurar que nunca retorne null
 	if trends == nil {
 		trends = []TrendingTag{}
 	}
-	
+
 	RespondSuccess(c, gin.H{"trends": trends})
 }
 
@@ -1066,7 +1140,7 @@ func handleTriggerRetrain(c *gin.Context) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
-	    RespondError(c, NewAPIError(ErrCodeInternal, "El motor IA rechazó la orden de entrenamiento", resp.StatusCode))
+		RespondError(c, NewAPIError(ErrCodeInternal, "El motor IA rechazó la orden de entrenamiento", resp.StatusCode))
 		return
 	}
 

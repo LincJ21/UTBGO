@@ -19,11 +19,13 @@ import 'services/global_ui_service.dart';
 class VideoPlayerWidget extends StatefulWidget {
   final VideoModel video;
   final Function(bool isVisible) onVisibilityChanged;
+  final bool showTopBar;
 
   const VideoPlayerWidget({
     super.key,
     required this.video,
     required this.onVisibilityChanged,
+    this.showTopBar = true,
   });
 
   @override
@@ -37,7 +39,8 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
   final TextEditingController _searchController = TextEditingController();
   bool _isSearching = false;
   bool _showControls = true;
-  bool _viewTracked = false; // Evita reportar la misma vista múltiples veces por rebuild
+  bool _viewTracked =
+      false; // Evita reportar la misma vista múltiples veces por rebuild
 
   /// Reporta al backend que el usuario reprodujo este video (fire-and-forget).
   /// Usa http.post directo en vez de ApiClient para evitar que errores de
@@ -101,12 +104,13 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
   Future<void> _toggleRepost() async {
     final prefs = await SharedPreferences.getInstance();
     final role = prefs.getString('role') ?? '';
-    
+
     if (role == 'aspirante') {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Los aspirantes no pueden repostear contenido. ¡Inscríbete para disfrutar de todas las funciones!'),
+            content: Text(
+                'Los aspirantes no pueden repostear contenido. ¡Inscríbete para disfrutar de todas las funciones!'),
             backgroundColor: Colors.orange,
           ),
         );
@@ -131,15 +135,17 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
   }
 
   void _shareVideo() {
-    final title = widget.video.title.isNotEmpty ? widget.video.title : 'este video';
-    final shareText = '¡Mira $title en UTBGO! \n\nhttps://utbgo.app/video/${widget.video.id}';
+    final title =
+        widget.video.title.isNotEmpty ? widget.video.title : 'este video';
+    final shareText =
+        '¡Mira $title en UTBGO! \n\nhttps://utbgo.app/video/${widget.video.id}';
     Share.share(shareText);
   }
 
   void _performSearch() {
     final query = _searchController.text.trim();
     if (query.isEmpty) return;
-    
+
     FocusScope.of(context).unfocus();
     setState(() => _isSearching = false);
 
@@ -191,7 +197,8 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
                 },
                 child: SizedBox.expand(
                   child: _isImage
-                      ? Image.network(widget.video.videoUrl, fit: BoxFit.contain)
+                      ? Image.network(widget.video.videoUrl,
+                          fit: BoxFit.contain)
                       : FittedBox(
                           fit: BoxFit.cover,
                           child: SizedBox(
@@ -212,12 +219,13 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
                   child: Stack(
                     children: [
                       // Barra superior: Home + Buscar en UTBGO
-                      Positioned(
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        child: _buildTopBar(),
-                      ),
+                      if (widget.showTopBar)
+                        Positioned(
+                          top: 0,
+                          left: 0,
+                          right: 0,
+                          child: _buildTopBar(),
+                        ),
 
                       // Play/Pause central
                       if (!_isImage)
@@ -235,7 +243,8 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
                                 padding: const EdgeInsets.all(12),
                                 decoration: BoxDecoration(
                                   shape: BoxShape.circle,
-                                  color: Colors.green[400]?.withValues(alpha: 0.9),
+                                  color:
+                                      Colors.green[400]?.withValues(alpha: 0.9),
                                 ),
                                 child: const Icon(Icons.play_arrow,
                                     size: 64, color: Colors.white),
@@ -268,7 +277,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
                               text: widget.video.comments.toString(),
                               onTap: () {
                                 showCommentsBottomSheet(
-                                  context, 
+                                  context,
                                   videoId: widget.video.id,
                                   onCommentAdded: () {
                                     setState(() {
@@ -290,7 +299,9 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
                             const SizedBox(height: 16),
                             _actionButton(
                               icon: Icons.repeat,
-                              color: widget.video.isReposted ? Colors.green : Colors.white,
+                              color: widget.video.isReposted
+                                  ? Colors.green
+                                  : Colors.white,
                               text: '',
                               onTap: _toggleRepost,
                             ),
@@ -333,7 +344,8 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
                         right: 80,
                         bottom: 20,
                         child: GestureDetector(
-                          onTap: () => showDescriptionBottomSheet(context, widget.video),
+                          onTap: () =>
+                              showDescriptionBottomSheet(context, widget.video),
                           child: _buildAuthorInfo(),
                         ),
                       ),
@@ -354,30 +366,37 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
             ? Row(
                 children: [
                   IconButton(
-                    icon: const Icon(Icons.close, color: Colors.white, size: 26),
+                    icon:
+                        const Icon(Icons.close, color: Colors.white, size: 26),
                     onPressed: () => setState(() => _isSearching = false),
                   ),
                   Expanded(
                     child: Container(
                       height: 40,
                       decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.3), // Fondo más oscuro para contraste
+                        color: Colors.black.withValues(
+                            alpha: 0.3), // Fondo más oscuro para contraste
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.2), // Borde sutil transparente
+                          color: Colors.white.withValues(
+                              alpha: 0.2), // Borde sutil transparente
                           width: 1,
                         ),
                       ),
                       child: TextField(
                         controller: _searchController,
                         autofocus: true,
-                        style: const TextStyle(color: Colors.white, fontSize: 14),
+                        style:
+                            const TextStyle(color: Colors.white, fontSize: 14),
                         cursorColor: Colors.white,
                         decoration: InputDecoration(
                           hintText: 'Buscar en UTBGO...',
-                          hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 14),
+                          hintStyle: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.6),
+                              fontSize: 14),
                           border: InputBorder.none,
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 10),
                         ),
                         onSubmitted: (_) => _performSearch(),
                       ),
@@ -394,7 +413,8 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
                 children: [
                   GestureDetector(
                     onTap: () => setState(() => _isSearching = true),
-                    child: const Icon(Icons.search, color: Colors.white, size: 28),
+                    child:
+                        const Icon(Icons.search, color: Colors.white, size: 28),
                   ),
                   GestureDetector(
                     onTap: () {
@@ -406,7 +426,8 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
                     },
                     child: Stack(
                       children: [
-                        const Icon(Icons.notifications_none, color: Colors.white, size: 28),
+                        const Icon(Icons.notifications_none,
+                            color: Colors.white, size: 28),
                         Positioned(
                           right: 2,
                           top: 2,
@@ -414,7 +435,8 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
                             width: 8,
                             height: 8,
                             decoration: const BoxDecoration(
-                              color: Colors.green, // Simulando el punto verde de la imagen
+                              color: Colors
+                                  .green, // Simulando el punto verde de la imagen
                               shape: BoxShape.circle,
                             ),
                           ),
@@ -448,48 +470,46 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
                 behavior: HitTestBehavior.opaque,
                 onTap: () async {
                   if (widget.video.authorId == 0) return;
-                  
-                  final prefs = await SharedPreferences.getInstance();
-                  String userRole = prefs.getString('role') ?? 'estudiante';
-                  
+                  final authorId = widget.video.authorId;
+
                   int myId = -1;
-                  final token = await const FlutterSecureStorage().read(key: 'jwt_token');
+                  final token =
+                      await const FlutterSecureStorage().read(key: 'jwt_token');
                   if (token != null) {
                     final parts = token.split('.');
                     if (parts.length == 3) {
                       try {
                         String normalized = base64Url.normalize(parts[1]);
-                        String payloadStr = utf8.decode(base64Url.decode(normalized));
+                        String payloadStr =
+                            utf8.decode(base64Url.decode(normalized));
                         Map<String, dynamic> payload = jsonDecode(payloadStr);
                         if (payload.containsKey('user_id')) {
                           myId = (payload['user_id'] as num).toInt();
                         }
-                        if (payload.containsKey('role')) {
-                          userRole = payload['role'].toString();
-                        }
                       } catch (_) {}
                     }
                   }
-                  
-                  // Evita que los aspirantes interactúen con la red social por políticas
-                  if (userRole == 'aspirante') return;
 
-                  if (context.mounted) {
-                    if (myId != null && myId == widget.video.authorId) {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => Scaffold(body: ProfileScreen(onLogout: GlobalUIService.forceLogout)),
-                        ),
-                      );
-                    } else {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => PublicProfileScreen(authorId: widget.video.authorId),
-                        ),
-                      );
-                    }
+                  if (!mounted) {
+                    return;
+                  }
+
+                  final navigator = Navigator.of(context);
+                  if (myId == authorId) {
+                    navigator.push(
+                      MaterialPageRoute(
+                        builder: (context) => Scaffold(
+                            body: ProfileScreen(
+                                onLogout: GlobalUIService.forceLogout)),
+                      ),
+                    );
+                  } else {
+                    navigator.push(
+                      MaterialPageRoute(
+                        builder: (context) =>
+                            PublicProfileScreen(authorId: authorId),
+                      ),
+                    );
                   }
                 },
                 child: Column(
@@ -497,48 +517,61 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
                   children: [
                     Row(
                       children: [
+                        Text(
+                          widget.video.authorName.isNotEmpty
+                              ? widget.video.authorName
+                              : 'Usuario',
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 15),
+                        ),
+                        const SizedBox(width: 10),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF003399),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Text('Seguir',
+                              style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold)),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    if (widget.video.title.isNotEmpty &&
+                        widget.video.title != 'Video' &&
+                        widget.video.title != 'Imagen' &&
+                        widget.video.title != 'Encuesta' &&
+                        widget.video.title != 'Flashcard')
                       Text(
-                        widget.video.authorName.isNotEmpty ? widget.video.authorName : 'Usuario',
+                        widget.video.title,
                         style: const TextStyle(
                             color: Colors.white,
                             fontWeight: FontWeight.bold,
-                            fontSize: 15),
+                            fontSize: 14),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                      const SizedBox(width: 10),
-                      Container(
-                        padding:
-                            const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF003399),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Text('Seguir',
-                            style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+                    if (widget.video.description.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        widget.video.description,
+                        style:
+                            const TextStyle(color: Colors.white, fontSize: 14),
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  if (widget.video.title.isNotEmpty && widget.video.title != 'Video' && widget.video.title != 'Imagen' && widget.video.title != 'Encuesta' && widget.video.title != 'Flashcard')
-                    Text(
-                      widget.video.title,
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  if (widget.video.description.isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      widget.video.description,
-                      style: const TextStyle(color: Colors.white, fontSize: 14),
-                      maxLines: 3,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ]
-                ],
+                    ]
+                  ],
+                ),
               ),
             ),
-          ),
-        ],
+          ],
         ),
       ],
     );

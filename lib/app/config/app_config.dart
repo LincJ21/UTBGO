@@ -81,11 +81,14 @@ class AppConfig {
   static String get profileAvatarEndpoint => '$profileEndpoint/avatar';
   static String get profileBookmarksEndpoint => '$profileEndpoint/bookmarks';
   static String get profileRepostsEndpoint => '$profileEndpoint/reposts';
-  static String get profilePublicationsEndpoint => '$profileEndpoint/publications';
-  
+  static String get profilePublicationsEndpoint =>
+      '$profileEndpoint/publications';
+
   static String publicProfileEndpoint(int id) => '$profileEndpoint/public/$id';
-  static String publicProfilePublicationsEndpoint(int id) => '$profileEndpoint/public/$id/publications';
-  static String publicProfileFollowEndpoint(int id) => '$profileEndpoint/public/$id/follow';
+  static String publicProfilePublicationsEndpoint(int id) =>
+      '$profileEndpoint/public/$id/publications';
+  static String publicProfileFollowEndpoint(int id) =>
+      '$profileEndpoint/public/$id/follow';
 
   /// Genera URL para like de un video.
   static String videoLikeUrl(String videoId) => '$videosEndpoint/$videoId/like';
@@ -96,6 +99,10 @@ class AppConfig {
   /// Genera URL para bookmark de un video.
   static String videoBookmarkUrl(String videoId) =>
       '$videosEndpoint/$videoId/bookmark';
+
+  /// Genera URL para el estado del visitante sobre un video.
+  static String videoViewerStateUrl(String videoId) =>
+      '$videosEndpoint/$videoId/viewer-state';
 
   /// Genera URL para repost de un video.
   static String videoRepostUrl(String videoId) =>
@@ -111,7 +118,8 @@ class AppConfig {
   static String get recommendBaseUrl => '$backendBaseUrl/api/v1/recommend';
 
   /// Endpoint para recomendaciones personalizadas (For You).
-  static String get recommendPersonalizedEndpoint => '$recommendBaseUrl/personalized';
+  static String get recommendPersonalizedEndpoint =>
+      '$recommendBaseUrl/personalized';
 
   /// Endpoint para videos populares/trending.
   static String get recommendPopularEndpoint => '$recommendBaseUrl/popular';
@@ -151,7 +159,12 @@ class AppConfig {
   static const List<String> allowedVideoExtensions = ['mp4', 'mov', 'avi'];
 
   /// Extensiones de imagen permitidas.
-  static const List<String> allowedImageExtensions = ['jpg', 'jpeg', 'png', 'webp'];
+  static const List<String> allowedImageExtensions = [
+    'jpg',
+    'jpeg',
+    'png',
+    'webp'
+  ];
 
   // --- Google OAuth ---
 
@@ -161,7 +174,8 @@ class AppConfig {
   /// Fallback al valor de desarrollo si no se proporciona.
   static const String googleWebClientId = String.fromEnvironment(
     'GOOGLE_CLIENT_ID',
-    defaultValue: '687042966882-4m86nj8c9tfkmp0f6sl3qtk0m38cmefp.apps.googleusercontent.com',
+    defaultValue:
+        '687042966882-4m86nj8c9tfkmp0f6sl3qtk0m38cmefp.apps.googleusercontent.com',
   );
 
   // --- Microsoft Entra ID (Azure AD) ---
@@ -190,7 +204,3 @@ class AppConfig {
   /// Indica si Microsoft Entra ID está configurado.
   static bool get isMicrosoftEnabled => azureClientId.isNotEmpty;
 }
-
-
-
-

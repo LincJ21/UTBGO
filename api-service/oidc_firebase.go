@@ -8,6 +8,8 @@ import (
 	"github.com/coreos/go-oidc/v3/oidc"
 )
 
+const firebaseProviderName = "firebase"
+
 // FirebaseOIDCProvider implementa OIDCProvider para Firebase Auth
 type FirebaseOIDCProvider struct {
 	verifier *oidc.IDTokenVerifier
@@ -38,7 +40,7 @@ func NewFirebaseOIDCProvider(ctx context.Context) (*FirebaseOIDCProvider, error)
 
 // ProviderName retorna el identificador único del proveedor
 func (p *FirebaseOIDCProvider) ProviderName() string {
-	return "firebase"
+	return firebaseProviderName
 }
 
 // ValidateIDToken verifica el token de Firebase contra el issuer oficial
@@ -50,7 +52,7 @@ func (p *FirebaseOIDCProvider) ValidateIDToken(ctx context.Context, rawToken str
 
 	var claims struct {
 		Email         string `json:"email"`
-		EmailVerified bool   `json:"email_verified" `
+		EmailVerified bool   `json:"email_verified"`
 		Name          string `json:"name"`
 		Picture       string `json:"picture"`
 		Sub           string `json:"sub"`
@@ -60,11 +62,18 @@ func (p *FirebaseOIDCProvider) ValidateIDToken(ctx context.Context, rawToken str
 		return nil, fmt.Errorf("error al extraer claims de Firebase: %w", err)
 	}
 
+	if claims.Email == "" {
+		return nil, fmt.Errorf("el token de Firebase no contiene un correo válido")
+	}
+	if !claims.EmailVerified {
+		return nil, fmt.Errorf("el correo %s no está verificado por Google/Firebase", claims.Email)
+	}
+
 	return &OIDCClaims{
 		Email:    claims.Email,
 		Name:     claims.Name,
 		Picture:  claims.Picture,
 		Subject:  claims.Sub,
-		Provider: "firebase",
+		Provider: firebaseProviderName,
 	}, nil
 }
