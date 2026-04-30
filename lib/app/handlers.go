@@ -579,3 +579,61 @@ func handleGetVideosFeed(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"videos": videosForResponse})
 }
+
+func handlePollNotifications(c *gin.Context) {
+	userIDVal, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+	userID := int(userIDVal.(float64))
+
+	// Get unread notifications for the user
+	rows, err := DB.QueryContext(c, `
+		SELECT id_notificacion, titulo, mensaje, enlace_accion
+		FROM notificaciones
+		WHERE id_usuario_destino = $1 AND leida = false
+		ORDER BY fecha_creacion ASC LIMIT 10`, userID)
+	if err != nil {
+		log.Printf("Error fetching notifications: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error fetching notifications"})
+		return
+	}
+	defer rows.Close()
+
+	var notifications []map[string]interface{}
+	var notifIDs []int
+
+	for rows.Next() {
+		var id int
+		var title, message string
+		var link sql.NullString
+		if err := rows.Scan(&id, &title, &message, &link); err != nil {
+			continue
+		}
+
+		notif := map[string]interface{}{
+			"id": id,
+			"title": title,
+			"message": message,
+			"link": link.String,
+		}
+		notifications = append(notifications, notif)
+		notifIDs = append(notifIDs, id)
+	}
+
+	// Mark them as read if any were found
+	if len(notifIDs) > 0 {
+		_, err := DB.ExecContext(c, `
+			UPDATE notificaciones
+			SET leida = true, fecha_lectura = NOW()
+			WHERE id_notificacion = ANY($1::int[])`, notifIDs) // <-- FIXED line!
+		if err != nil {
+			log.Printf("Error updating notifications to read: %v", err)
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"notifications": notifications,
+	})
+}

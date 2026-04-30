@@ -199,6 +199,10 @@ func main() {
 			profile.GET("/me", AuthMiddleware(), handleGetProfile)
 			profile.POST("/avatar", AuthMiddleware(), handleUploadAvatar)
 		}
+		notifications := api.Group("/notifications")
+		{
+			notifications.GET("/poll", AuthMiddleware(), handlePollNotifications)
+		}
 	}
 
 	log.Println("Servidor Go escuchando en http://localhost:8080")
