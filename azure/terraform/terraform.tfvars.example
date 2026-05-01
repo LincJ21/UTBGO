@@ -1,0 +1,42 @@
+# ==============================================================================
+# UTBGO - VARIABLES DE DESPLIEGUE (TERRAFORM)
+# ==============================================================================
+# Copia este archivo como 'terraform.tfvars' y rellena los valores reales.
+# NUNCA subas el archivo .tfvars final a GitHub.
+
+# --- 1. Información del Proyecto ---
+project_name = "utbgo"
+location     = "eastus2"
+
+# --- 2. Secretos y Credenciales (Saca estos de tu .env) ---
+
+# URL de Neon (postgresql://...)
+db_connection_string = ""
+
+# URL de Upstash Redis (rediss://...)
+redis_url = ""
+
+# Clave JWT para firmar tokens
+jwt_secret = ""
+
+# URL de Cloudinary (cloudinary://...)
+cloudinary_url = ""
+
+# --- 3. Configuración OIDC / Google ---
+google_client_id    = ""
+firebase_project_id = ""
+
+# --- 4. Configuración Institucional ---
+institutional_domain = "utb.edu.co"
+admin_domain        = "admin.utb.edu.co"
+admin_emails        = "" # Ejemplo: "user1@gmail.com,user2@gmail.com"
+
+# --- 5. Imágenes de Docker ---
+# Formato: nombre_registro.azurecr.io/nombre_imagen:tag
+api_image             = ""
+tracking_image        = ""
+recommendations_image = ""
+video_worker_image    = ""
+
+# --- 6. Otros ---
+storage_provider = "cloudinary"

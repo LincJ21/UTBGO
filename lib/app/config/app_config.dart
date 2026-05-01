@@ -6,7 +6,7 @@ enum Environment { development, production }
 
 /// Configuración activa de la aplicación.
 /// Cambiar a [Environment.production] antes de compilar para producción.
-const Environment _environment = Environment.development;
+const Environment _environment = Environment.production;
 
 /// Clase de configuración que centraliza todas las URLs y constantes.
 /// Esto permite cambiar fácilmente entre entornos sin modificar código.
@@ -35,8 +35,7 @@ class AppConfig {
         // Para dispositivo físico: IP local de tu máquina
         return 'http://10.0.2.2:8080';
       case Environment.production:
-        // TODO: Reemplazar con tu URL de producción real
-        return 'https://api.utbgo.com';
+        return 'https://utbgo-api.mangoglacier-215c4d32.eastus2.azurecontainerapps.io';
     }
   }
 

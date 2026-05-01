@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import '../lib/app/login_screen.dart';
+import 'package:flutter_practica/app/login_screen.dart';
 
 void main() {
   testWidgets('LoginScreen interactividad y validaciones (Test Deterministico UI)', (WidgetTester tester) async {

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'admin_api_service.dart';
 import 'admin_models.dart';
-import 'config/api_client.dart';
 import 'config/app_config.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart' as flutter_secure_storage;
@@ -245,7 +244,7 @@ class _UsersTabState extends State<_UsersTab> {
   final AdminApiService _apiService = AdminApiService();
   final TextEditingController _searchController = TextEditingController();
   
-  List<AdminUser> _users = [];
+  final List<AdminUser> _users = [];
   bool _isLoading = false;
   int _currentPage = 1;
   bool _hasMore = true;
@@ -476,7 +475,7 @@ class _VideosTabState extends State<_VideosTab> {
   final AdminApiService _apiService = AdminApiService();
   final TextEditingController _searchController = TextEditingController();
   
-  List<AdminVideo> _videos = [];
+  final List<AdminVideo> _videos = [];
   bool _isLoading = false;
   int _currentPage = 1;
   bool _hasMore = true;

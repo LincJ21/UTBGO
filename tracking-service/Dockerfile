@@ -31,7 +31,7 @@ COPY --chown=appuser:appgroup . .
 # Update PATH to include local pip bin
 ENV PATH=/home/appuser/.local/bin:$PATH
 
-EXPOSE 8091
+EXPOSE 8080
 
 # Use Gunicorn as process manager
-CMD ["gunicorn", "app.main:app", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8091"]
+CMD ["gunicorn", "app.main:app", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8080"]

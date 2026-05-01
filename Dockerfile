@@ -28,7 +28,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
     -o /build/utbgo-api .
 
 # ----- Etapa 2: Runtime -----
-FROM alpine:3.19 AS runtime
+FROM alpine:3.21 AS runtime
 
 # Instalar solo lo necesario para runtime
 RUN apk add --no-cache ca-certificates tzdata
@@ -55,9 +55,7 @@ EXPOSE 8080
 ENV GIN_MODE=release
 ENV PORT=8080
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:${PORT}/health || exit 1
+# Azure Container Apps gestiona los health probes via ingress targetPort
 
 # Ejecutar la aplicación
 ENTRYPOINT ["/app/utbgo-api"]

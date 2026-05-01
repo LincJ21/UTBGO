@@ -54,18 +54,29 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
   }
 
   Future<void> _checkAuthStatus() async {
-    const storage = FlutterSecureStorage();
-    final token = await storage.read(key: 'jwt_token');
-    
-    // Si ya estamos autenticados, actualicemos el rol silenciosamente
-    if (token != null && token.isNotEmpty) {
-      _cacheUserRoleSilently();
+    try {
+      const storage = FlutterSecureStorage();
+      // Ponemos un timeout de 3 segundos a la lectura del token. 
+      // Si el Keystore de Android está lento, no bloquearemos la app.
+      final token = await storage.read(key: 'jwt_token').timeout(
+        const Duration(seconds: 3),
+        onTimeout: () => null, 
+      );
+      
+      if (token != null && token.isNotEmpty) {
+        _cacheUserRoleSilently();
+      }
+      
+      if (!mounted) return;
+      setState(() {
+        _isAuthenticated = token != null && token.isNotEmpty;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isAuthenticated = false;
+      });
     }
-    
-    if (!mounted) return;
-    setState(() {
-      _isAuthenticated = token != null && token.isNotEmpty;
-    });
   }
 
   Future<void> _cacheUserRoleSilently() async {

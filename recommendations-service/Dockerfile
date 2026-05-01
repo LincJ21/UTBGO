@@ -31,7 +31,7 @@ COPY --chown=appuser:appgroup . .
 # Update PATH to include local pip bin
 ENV PATH=/home/appuser/.local/bin:$PATH
 
-EXPOSE 8090
+EXPOSE 8080
 
-# Use Gunicorn with optimized settings for high concurrency
-CMD ["gunicorn", "app.main:app", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8090", "--timeout", "120", "--keep-alive", "5"]
+# Use Gunicorn as process manager
+CMD ["gunicorn", "app.main:app", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8080", "--timeout", "120", "--keep-alive", "5"]

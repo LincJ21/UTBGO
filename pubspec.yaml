@@ -1,5 +1,5 @@
 name: flutter_practica
-description: "proyecto en domestika"
+description: "UTBGO - Plataforma educativa UTB"
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: "none" # Remove this line if you wish to publish to pub.dev
@@ -31,14 +31,14 @@ dependencies:
   flutter:
     sdk: flutter
   video_player: ^2.10.0
-  http: 1.2.1 # Anclamos la versión para evitar conflictos con el SDK.
+  http: ^1.2.1
   image_picker: ^1.1.2
   url_launcher: ^6.3.2
   google_sign_in: ^6.2.1 # Paquete para el flujo de login nativo de Android
   flutter_secure_storage: ^9.2.2 # Para guardar el token JWT de forma segura
   aad_oauth: ^1.0.1 # Microsoft Entra ID (Azure AD) OAuth - Acceso institucional
-  firebase_core: any
-  firebase_auth: any
+  firebase_core: ^3.4.0
+  firebase_auth: ^5.2.0
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
@@ -57,7 +57,7 @@ dev_dependencies:
   # activated in the `analysis_options.yaml` file located at the root of your
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
-  flutter_lints: ^5.0.0
+  flutter_lints: ^6.0.0
 
 # Esta sección fuerza a usar una versión específica de un paquete.
 # La usamos para resolver el conflicto entre la versión que necesita Android (nueva)

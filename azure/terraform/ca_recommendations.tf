@@ -4,6 +4,12 @@ resource "azurerm_container_app" "recommendations" {
   resource_group_name          = azurerm_resource_group.rg.name
   revision_mode                = "Single"
 
+  registry {
+    server               = azurerm_container_registry.acr.login_server
+    username             = azurerm_container_registry.acr.admin_username
+    password_secret_name = "acr-password"
+  }
+
   template {
     container {
       name   = "recommendations"
@@ -19,6 +25,10 @@ resource "azurerm_container_app" "recommendations" {
         name        = "REDIS_URL"
         secret_name = "redis-url"
       }
+      env {
+        name        = "API_KEY"
+        secret_name = "recommendations-api-key"
+      }
     }
     
     min_replicas = 0 # Scale to zero to save costs
@@ -27,7 +37,7 @@ resource "azurerm_container_app" "recommendations" {
 
   ingress {
     external_enabled = true
-    target_port      = 8090
+    target_port      = 8080
     traffic_weight {
       percentage      = 100
       latest_revision = true
@@ -41,5 +51,13 @@ resource "azurerm_container_app" "recommendations" {
   secret {
     name  = "redis-url"
     value = var.redis_url
+  }
+  secret {
+    name  = "recommendations-api-key"
+    value = var.recommendations_api_key
+  }
+  secret {
+    name  = "acr-password"
+    value = azurerm_container_registry.acr.admin_password
   }
 }

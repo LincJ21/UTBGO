@@ -1,0 +1,138 @@
+name: UTBGO Enterprise CD Pipeline
+
+on:
+  workflow_run:
+    workflows: ["UTBGO Enterprise CI Pipeline"]
+    types:
+      - completed
+    branches:
+      - main
+
+permissions:
+  id-token: write # Requerido para Azure OIDC Federated Credentials
+  contents: read
+  pull-requests: write
+
+env:
+  TF_WORKING_DIR: './azure/terraform'
+
+jobs:
+  # =========================================================
+  # JOB 1: Build & Push to ACR
+  # =========================================================
+  build_and_push:
+    name: Build & Push to Azure Container Registry
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 🔐 Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: 🐳 Login to Azure Container Registry
+        run: az acr login --name ${{ secrets.ACR_NAME }}
+
+      - name: 🔨 Build and Push Images
+        run: |
+          # API Go
+          docker build -f api-service/Dockerfile -t ${{ secrets.ACR_NAME }}.azurecr.io/utbgo-api:${{ github.sha }} ./api-service
+          docker push ${{ secrets.ACR_NAME }}.azurecr.io/utbgo-api:${{ github.sha }}
+          
+          # Tracking Python
+          docker build -f tracking-service/Dockerfile -t ${{ secrets.ACR_NAME }}.azurecr.io/utbgo-tracking:${{ github.sha }} ./tracking-service
+          docker push ${{ secrets.ACR_NAME }}.azurecr.io/utbgo-tracking:${{ github.sha }}
+          
+          # Recommendations Python
+          docker build -f recommendations-service/Dockerfile -t ${{ secrets.ACR_NAME }}.azurecr.io/utbgo-recommendations:${{ github.sha }} ./recommendations-service
+          docker push ${{ secrets.ACR_NAME }}.azurecr.io/utbgo-recommendations:${{ github.sha }}
+          
+          # Video Worker Python
+          docker build -f video-worker-service/Dockerfile -t ${{ secrets.ACR_NAME }}.azurecr.io/utbgo-video-worker:${{ github.sha }} ./video-worker-service
+          docker push ${{ secrets.ACR_NAME }}.azurecr.io/utbgo-video-worker:${{ github.sha }}
+
+  # =========================================================
+  # JOB 2: Deploy to Production (Terraform)
+  # =========================================================
+  deploy_production:
+    name: Deploy to Production via Terraform
+    needs: build_and_push
+    runs-on: ubuntu-latest
+    environment: Production # Esto pausa el workflow esperando aprobación manual en GitHub
+
+    defaults:
+      run:
+        working-directory: ${{ env.TF_WORKING_DIR }}
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 🔐 Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: ⚙️ Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: 🚀 Terraform Init
+        run: terraform init
+        env:
+          # Para inicializar el backend necesitamos pasar las credenciales de Azure
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+
+      - name: 🚀 Terraform Apply
+        run: |
+          terraform apply -auto-approve \
+            -var="api_image=${{ secrets.ACR_NAME }}.azurecr.io/utbgo-api:${{ github.sha }}" \
+            -var="tracking_image=${{ secrets.ACR_NAME }}.azurecr.io/utbgo-tracking:${{ github.sha }}" \
+            -var="recommendations_image=${{ secrets.ACR_NAME }}.azurecr.io/utbgo-recommendations:${{ github.sha }}" \
+            -var="video_worker_image=${{ secrets.ACR_NAME }}.azurecr.io/utbgo-video-worker:${{ github.sha }}"
+        env:
+          # Auth para Terraform
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          
+          # Secretos inyectados como variables de entorno de Terraform (TF_VAR_*)
+          # Esto reemplaza el archivo local terraform.tfvars
+          TF_VAR_db_connection_string: ${{ secrets.DB_CONNECTION_STRING }}
+          TF_VAR_redis_url: ${{ secrets.REDIS_URL }}
+          TF_VAR_jwt_secret: ${{ secrets.JWT_SECRET }}
+          TF_VAR_cloudinary_url: ${{ secrets.CLOUDINARY_URL }}
+          TF_VAR_recommendations_api_key: ${{ secrets.RECOMMENDATIONS_API_KEY }}
+          TF_VAR_tracking_api_key: ${{ secrets.TRACKING_API_KEY }}
+          TF_VAR_google_client_id: ${{ secrets.GOOGLE_CLIENT_ID }}
+          TF_VAR_firebase_project_id: ${{ secrets.FIREBASE_PROJECT_ID }}
+
+  # =========================================================
+  # JOB 3: Performance Validation (k6)
+  # =========================================================
+  performance_test:
+    name: Verify SLOs with k6
+    needs: deploy_production
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: ⏱️ Setup k6
+        uses: grafana/setup-k6-action@v1
+
+      - name: 🏃 Run k6 Performance Test
+        run: k6 run tests/k6/performance-test.js
+        env:
+          # Reemplazar con la URL real expuesta por Terraform
+          API_URL: ${{ secrets.PROD_API_URL }}

@@ -207,3 +207,20 @@ widget_analyze.txt
 # Permitimos la carpeta tests/ y sus scripts
 !tests/
 !tests/*.py
+
+# ==============================================================================
+# TERRAFORM (Infraestructura)
+# ==============================================================================
+# Bloquear secretos y archivos de estado
+*.tfvars
+*.tfvars.json
+terraform.tfvars
+terraform.tfvars.json
+
+# Bloquear archivos de estado local de Terraform
+*.tfstate
+*.tfstate.backup
+.terraform.tfstate.lock.info
+
+# Bloquear carpeta de binarios y módulos de Terraform
+.terraform/

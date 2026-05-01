@@ -4,6 +4,12 @@ resource "azurerm_container_app" "video_worker" {
   resource_group_name          = azurerm_resource_group.rg.name
   revision_mode                = "Single"
 
+  registry {
+    server               = azurerm_container_registry.acr.login_server
+    username             = azurerm_container_registry.acr.admin_username
+    password_secret_name = "acr-password"
+  }
+
   template {
     container {
       name   = "video-worker"
@@ -32,5 +38,9 @@ resource "azurerm_container_app" "video_worker" {
   secret {
     name  = "cloudinary-url"
     value = var.cloudinary_url
+  }
+  secret {
+    name  = "acr-password"
+    value = azurerm_container_registry.acr.admin_password
   }
 }

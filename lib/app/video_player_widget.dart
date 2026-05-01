@@ -475,7 +475,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
                   if (userRole == 'aspirante') return;
 
                   if (context.mounted) {
-                    if (myId != null && myId == widget.video.authorId) {
+                    if (myId == widget.video.authorId) {
                       Navigator.push(
                         context,
                         MaterialPageRoute(

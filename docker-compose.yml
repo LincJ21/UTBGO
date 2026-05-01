@@ -2,7 +2,6 @@
 # UTBGO — Docker Compose para Desarrollo Local
 # ===========================================
 
-version: '3.8'
 
 services:
   api:
@@ -43,7 +42,7 @@ services:
       context: ./tracking-service
       dockerfile: Dockerfile
     ports:
-      - "8091:8091"
+      - "8091:8080"
     environment:
       - PROJECT_NAME=Tracking Service
       - API_KEY=${TRACKING_API_KEY}
@@ -68,7 +67,7 @@ services:
       context: ./recommendations-service
       dockerfile: Dockerfile
     ports:
-      - "8090:8090"
+      - "8090:8080"
     environment:
       - PROJECT_NAME=Recommendation Service
       - API_KEY=${RECOMMENDATIONS_API_KEY}
