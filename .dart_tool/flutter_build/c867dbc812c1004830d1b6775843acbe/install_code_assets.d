@@ -1,0 +1,1 @@
+ /run/media/lincj/datos/ProyectoG/UTBGO/.dart_tool/flutter_build/c867dbc812c1004830d1b6775843acbe/native_assets.json: 
