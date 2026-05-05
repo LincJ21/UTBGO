@@ -224,10 +224,11 @@ func handleGetProfile(c *gin.Context) {
 
 	// Consultar datos reales de la base de datos
 	err := DB.QueryRowContext(c, `
-		SELECT u.id_usuario, p.nombre || ' ' || p.apellido, u.email, p.avatar_url
+		SELECT u.id_usuario, p.nombre || ' ' || p.apellido, u.email, p.avatar_url, tu.codigo
 		FROM usuarios u
 		JOIN perfiles p ON u.id_usuario = p.id_usuario
-		WHERE u.id_usuario = $1`, userID).Scan(&user.ID, &user.Username, &user.Email, &avatarURL)
+		JOIN tipos_usuario tu ON u.id_tipo_usuario = tu.id_tipo_usuario
+		WHERE u.id_usuario = $1`, userID).Scan(&user.ID, &user.Username, &user.Email, &avatarURL, &user.Role)
 
 	if err != nil {
 		log.Printf("Error al obtener perfil: %v", err)
@@ -636,4 +637,82 @@ func handlePollNotifications(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"notifications": notifications,
 	})
+}
+
+// --- Admin Handlers ---
+
+func handleAdminStats(c *gin.Context) {
+	var userCount int
+	var contentCount int
+
+	err := DB.QueryRowContext(c, "SELECT COUNT(*) FROM usuarios").Scan(&userCount)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error getting user count"})
+		return
+	}
+
+	err = DB.QueryRowContext(c, "SELECT COUNT(*) FROM contenidos").Scan(&contentCount)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error getting content count"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"total_users": userCount,
+		"total_contents": contentCount,
+	})
+}
+
+func handleAdminUsers(c *gin.Context) {
+	rows, err := DB.QueryContext(c, `
+		SELECT u.id_usuario, u.email, COALESCE(p.nombre, '') || ' ' || COALESCE(p.apellido, '') as fullname, u.fecha_registro
+		FROM usuarios u
+		LEFT JOIN perfiles p ON u.id_usuario = p.id_usuario
+		ORDER BY u.fecha_registro DESC
+		LIMIT 50
+	`)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error getting users"})
+		return
+	}
+	defer rows.Close()
+
+	users := make([]gin.H, 0)
+	for rows.Next() {
+		var id int
+		var email, fullname, date string
+		if err := rows.Scan(&id, &email, &fullname, &date); err == nil {
+			users = append(users, gin.H{"id": id, "email": email, "fullname": fullname, "date": date})
+		}
+	}
+
+	c.JSON(http.StatusOK, users)
+}
+
+func handleAdminContents(c *gin.Context) {
+	rows, err := DB.QueryContext(c, `
+		SELECT c.id_contenido, c.titulo, tc.codigo as type, c.fecha_creacion
+		FROM contenidos c
+		LEFT JOIN tipos_contenido tc ON c.id_tipo_contenido = tc.id_tipo_contenido
+		ORDER BY c.fecha_creacion DESC
+		LIMIT 50
+	`)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error getting contents"})
+		return
+	}
+	defer rows.Close()
+
+	contents := make([]gin.H, 0)
+	for rows.Next() {
+		var id int
+		var title, date string
+		// type can be null so handle carefully or just assume string
+		var ct sql.NullString
+		if err := rows.Scan(&id, &title, &ct, &date); err == nil {
+			contents = append(contents, gin.H{"id": id, "title": title, "type": ct.String, "date": date})
+		}
+	}
+
+	c.JSON(http.StatusOK, contents)
 }

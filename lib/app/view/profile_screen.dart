@@ -8,6 +8,7 @@ import 'create_post_sheet.dart';
 import 'package:image_picker/image_picker.dart';
 import 'api_constants.dart';
 import 'package:video_player/video_player.dart';
+import 'admin_screen.dart';
 
 /// [ProfileScreen] muestra la información del perfil del usuario.
 ///
@@ -60,6 +61,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         id: 'local-1',
         username: 'Nombre Estudiante (Local)',
         avatarUrl: '', // URL vacía para mostrar el ícono
+        role: 'estudiante',
       );
     }
   }
@@ -243,6 +245,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   widget.onLogout();
                                 } else if (value == 'create_post') {
                                   showCreatePostSheet(context);
+                                } else if (value == 'admin') {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(builder: (context) => const AdminScreen()),
+                                  );
                                 }
                               },
                               itemBuilder: (BuildContext context) =>
@@ -263,6 +270,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                     Text('Crear publicación')
                                   ]),
                                 ),
+                                if (profile.role == 'admin')
+                                  const PopupMenuItem<String>(
+                                    value: 'admin',
+                                    child: Row(children: [
+                                      Icon(Icons.admin_panel_settings, color: Colors.black87),
+                                      SizedBox(width: 10),
+                                      Text('Panel Admin')
+                                    ]),
+                                  ),
                                 const PopupMenuItem<String>(
                                   value: 'logout',
                                   child: Row(children: [

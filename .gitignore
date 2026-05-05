@@ -4,3 +4,5 @@ android/.gradle/
 android/app/build/
 android/app/src/debug/
 build/
+.gitignore
+lib/app/utbgo-api

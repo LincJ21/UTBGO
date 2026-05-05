@@ -44,6 +44,41 @@ var likeInteractionTypeID int
 
 // --- Middleware de Autenticación ---
 
+func AdminMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userIDVal, exists := c.Get("userID")
+		if !exists {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+			c.Abort()
+			return
+		}
+
+		userID := int(userIDVal.(float64))
+
+		var userTypeCode string
+		err := DB.QueryRowContext(c, `
+			SELECT tu.codigo
+			FROM usuarios u
+			JOIN tipos_usuario tu ON u.id_tipo_usuario = tu.id_tipo_usuario
+			WHERE u.id_usuario = $1
+		`, userID).Scan(&userTypeCode)
+
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check admin status"})
+			c.Abort()
+			return
+		}
+
+		if userTypeCode != "admin" {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Admin access required"})
+			c.Abort()
+			return
+		}
+
+		c.Next()
+	}
+}
+
 func AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
@@ -202,6 +237,13 @@ func main() {
 		notifications := api.Group("/notifications")
 		{
 			notifications.GET("/poll", AuthMiddleware(), handlePollNotifications)
+		}
+		admin := api.Group("/admin")
+		{
+			admin.Use(AuthMiddleware(), AdminMiddleware())
+			admin.GET("/stats", handleAdminStats)
+			admin.GET("/users", handleAdminUsers)
+			admin.GET("/contents", handleAdminContents)
 		}
 	}
 
