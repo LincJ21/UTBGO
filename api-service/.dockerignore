@@ -1,0 +1,33 @@
+# Binarios compilados
+*.exe
+backend.exe
+server
+
+# Archivos de entorno (NUNCA subir secretos)
+.env
+.env.*
+
+# Herramientas de desarrollo
+tools/
+db.py
+db.txt
+
+# Archivos no-Go
+*.dart
+*.xml
+*.sql
+view/
+app.dart
+network_security_config.xml
+schema.sql
+
+# Archivos de IDE
+.vscode/
+.idea/
+
+# Git
+.git
+.gitignore
+
+# Archivos de handlers con nombre raro
+handlers.go@@*

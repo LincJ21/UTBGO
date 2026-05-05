@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: local_user
+      POSTGRES_PASSWORD: local_password
+      POSTGRES_DB: tracking_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - tracking_pgdata:/var/lib/postgresql/data
+      # Mount the initialization script
+      - ./app/database/migrations/001_initial_schema.sql:/docker-entrypoint-initdb.d/init.sql
+
+volumes:
+  tracking_pgdata:

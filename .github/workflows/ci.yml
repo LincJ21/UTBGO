@@ -1,0 +1,71 @@
+name: UTBGO CI Pipeline
+
+on:
+  push:
+    branches: [ "main", "release/**" ]
+  pull_request:
+    branches: [ "main", "release/**" ]
+
+jobs:
+  # =========================================================
+  # JOB 1: Backend Go (API Service)
+  # =========================================================
+  go_api_test:
+    name: Backend Go (Lint & Test)
+    runs-on: ubuntu-latest
+    
+    defaults:
+      run:
+        working-directory: ./api-service
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: ⚙️ Setup Go Environment
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache-dependency-path: ./api-service/go.sum
+
+      - name: 📦 Install Dependencies
+        run: go mod download
+
+      - name: 🧹 Clean Code (Go Fmt)
+        run: |
+          if [ -n "$(go fmt ./...)" ]; then
+            echo "Error: Code is not properly formatted. Run 'go fmt ./...' locally."
+            exit 1
+          fi
+
+      - name: 🔍 Clean Code (Go Vet)
+        run: go vet ./...
+
+      - name: 🧪 Run Security & Unit Tests
+        run: go test -v ./...
+
+  # =========================================================
+  # JOB 2: Frontend Flutter
+  # =========================================================
+  flutter_test:
+    name: Frontend Flutter (Lint & Test)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: ⚙️ Setup Flutter Environment
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: 📦 Install Dependencies
+        run: flutter pub get
+
+      - name: 🔍 Clean Code (Flutter Analyze)
+        run: flutter analyze
+
+      - name: 🧪 Run Deterministic UI Tests
+        run: flutter test
