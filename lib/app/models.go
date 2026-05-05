@@ -7,6 +7,7 @@ type User struct {
 	Username  string `json:"username"`
 	Email     string `json:"email"`
 	AvatarURL string `json:"avatarUrl"`
+	Role      string `json:"role"`
 }
 
 type Video struct {
