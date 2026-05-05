@@ -97,9 +97,9 @@ class _PollWidgetState extends State<PollWidget> {
                           child: Container(
                             height: 50,
                             decoration: BoxDecoration(
-                              color: const Color(0xFF003399).withOpacity(0.1), // Azul UTB muy suave
+                              color: const Color(0xFF003399).withValues(alpha: 0.1), // Azul UTB muy suave
                               borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: const Color(0xFF003399).withOpacity(0.3)),
+                              border: Border.all(color: const Color(0xFF003399).withValues(alpha: 0.3)),
                             ),
                           ),
                         ),

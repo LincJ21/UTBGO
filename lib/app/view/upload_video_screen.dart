@@ -28,17 +28,21 @@ class _UploadVideoScreenState extends State<UploadVideoScreen> {
       });
     } catch (e) {
       debugPrint("Error al seleccionar el video: $e");
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Error al seleccionar el video.')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Error al seleccionar el video.')),
+        );
+      }
     }
   }
 
   Future<void> _uploadVideo() async {
     if (_videoFile == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Por favor, selecciona un video primero.')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No se seleccionó ningún video')),
+        );
+      }
       return;
     }
     if (_titleController.text.isEmpty) {
@@ -68,7 +72,8 @@ class _UploadVideoScreenState extends State<UploadVideoScreen> {
 
       final response = await request.send();
 
-      if (response.statusCode == 200) {
+      if (!mounted) return;
+      if (!mounted) return; if (response.statusCode == 200) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('¡Video subido con éxito!')),
         );
@@ -79,9 +84,11 @@ class _UploadVideoScreenState extends State<UploadVideoScreen> {
       }
     } catch (e) {
       debugPrint("Error al subir el video: $e");
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al subir el video: $e')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Error al subir el video')),
+        );
+      }
     } finally {
       setState(() {
         _isUploading = false;

@@ -87,6 +87,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     // 3. Enviar la petición
     try {
       final response = await request.send();
+      if (!mounted) return;
       if (response.statusCode == 200) {
         debugPrint('Avatar subido con éxito!');
         // 4. Refrescar el perfil para mostrar la nueva imagen
@@ -525,7 +526,7 @@ class _ProfilePostsTabState extends State<_ProfilePostsTab> {
         typeIcon = Icons.image;
         break;
       case 2: // Flashcards
-        baseColor = const Color(0xFF003399).withOpacity(0.8);
+        baseColor = const Color(0xFF003399).withValues(alpha: 0.8);
         typeIcon = Icons.style;
         overlayText = "Set #${index + 1}";
         break;
@@ -548,7 +549,7 @@ class _ProfilePostsTabState extends State<_ProfilePostsTab> {
         children: [
           if (_selectedIndex != 1)
             Center(
-              child: Icon(typeIcon, color: Colors.white.withOpacity(0.5), size: 32),
+              child: Icon(typeIcon, color: Colors.white.withValues(alpha: 0.5), size: 32),
             ),
           if (overlayText.isNotEmpty)
             Positioned(

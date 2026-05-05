@@ -9,11 +9,11 @@ class VideoModel {
   final List<Map<String, dynamic>>? flashcards; // Datos de las flashcards
   final List<Map<String, dynamic>>? pollOptions; // Datos de la encuesta
   // Convertimos a 'var' para poder modificarlos
-  var likes;
-  var comments;
-  var isLiked;
-  var isBookmarked;
-  var hasVotedOnPoll; // Estado local para saber si ya votó
+  int likes;
+  int comments;
+  bool isLiked;
+  bool isBookmarked;
+  bool hasVotedOnPoll; // Estado local para saber si ya votó
 
   VideoModel({
     required this.id,

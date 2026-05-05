@@ -90,7 +90,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: Colors.black.withOpacity(0.5),
+                      color: Colors.black.withValues(alpha: 0.5),
                     ),
                     child: const Icon(Icons.play_arrow,
                         size: 60, color: Colors.white),
@@ -106,7 +106,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
                       child: Container(
                         padding: const EdgeInsets.all(6),
                         decoration: BoxDecoration(
-                          color: Colors.black.withOpacity(0.6),
+                          color: Colors.black.withValues(alpha: 0.6),
                           shape: BoxShape.circle,
                         ),
                         child: const Icon(Icons.fullscreen, color: Colors.white, size: 24),

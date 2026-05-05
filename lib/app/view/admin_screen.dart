@@ -5,10 +5,10 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'api_constants.dart';
 
 class AdminScreen extends StatefulWidget {
-  const AdminScreen({Key? key}) : super(key: key);
+  const AdminScreen({super.key});
 
   @override
-  _AdminScreenState createState() => _AdminScreenState();
+  State<AdminScreen> createState() => _AdminScreenState();
 }
 
 class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStateMixin {

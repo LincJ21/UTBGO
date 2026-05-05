@@ -66,6 +66,7 @@ class _LoginScreenState extends State<LoginScreen> {
         body: json.encode({'token': idToken}),
       );
 
+      if (!mounted) return;
       if (response.statusCode == 200) {
         // 4. El backend nos devuelve nuestro propio token JWT.
         final responseBody = json.decode(response.body);
@@ -81,9 +82,11 @@ class _LoginScreenState extends State<LoginScreen> {
     } catch (error) {
       debugPrint('Error durante el inicio de sesión con Google: $error');
       // Opcional: Mostrar un SnackBar o diálogo de error al usuario.
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Error al iniciar sesión. Inténtalo de nuevo.')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Error al iniciar sesión. Inténtalo de nuevo.')),
+        );
+      }
     }
   }
 
