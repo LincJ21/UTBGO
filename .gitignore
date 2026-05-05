@@ -207,3 +207,13 @@ widget_analyze.txt
 # Permitimos la carpeta tests/ y sus scripts
 !tests/
 !tests/*.py
+
+# Flutter generated files
+.dart_tool/
+.flutter-plugins-dependencies
+pubspec.lock
+android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
+ios/Runner/GeneratedPluginRegistrant.m
+macos/Flutter/GeneratedPluginRegistrant.swift
+windows/flutter/generated_plugin_registrant.cc
+windows/flutter/generated_plugins.cmake
