@@ -176,12 +176,12 @@ class _SingleFlashcardItemState extends State<_SingleFlashcardItem> with TickerP
                 borderRadius: BorderRadius.circular(32),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.15 * shadowFactor),
+                    color: Colors.black.withValues(alpha: 0.15 * shadowFactor),
                     blurRadius: 24 * shadowFactor,
                     offset: Offset(0, 12 * shadowFactor),
                   ),
                   BoxShadow(
-                    color: const Color(0xFFE0E5EC).withOpacity(0.6 * shadowFactor),
+                    color: const Color(0xFFE0E5EC).withValues(alpha: 0.6 * shadowFactor),
                     blurRadius: 16 * shadowFactor,
                     spreadRadius: -4,
                   ),
@@ -215,9 +215,9 @@ class _SingleFlashcardItemState extends State<_SingleFlashcardItem> with TickerP
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
                           colors: [
-                            Colors.white.withOpacity(0.0),
-                            Colors.white.withOpacity(0.2 * sin(angle).abs()),
-                            Colors.white.withOpacity(0.0),
+                            Colors.white.withValues(alpha: 0.0),
+                            Colors.white.withValues(alpha: 0.2 * sin(angle).abs()),
+                            Colors.white.withValues(alpha: 0.0),
                           ],
                         ),
                       ),
@@ -366,7 +366,7 @@ class _SingleFlashcardItemState extends State<_SingleFlashcardItem> with TickerP
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 10,
             offset: const Offset(0, 5),
           ),

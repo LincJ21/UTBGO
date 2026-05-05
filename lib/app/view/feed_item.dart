@@ -38,9 +38,9 @@ class _FeedItemState extends State<FeedItem> {
   void initState() {
     super.initState();
     // Inicializamos el estado local con los datos del modelo
-    _isBookmarked = widget.video.isBookmarked ?? false;
-    _isLiked = widget.video.isLiked ?? false;
-    _likes = widget.video.likes ?? 0;
+    _isBookmarked = widget.video.isBookmarked;
+    _isLiked = widget.video.isLiked;
+    _likes = widget.video.likes;
   }
 
   Future<void> _toggleLike() async {

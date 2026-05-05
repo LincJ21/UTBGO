@@ -256,7 +256,7 @@ class _CreatePostSheetState extends State<CreatePostSheet> {
             boxShadow: isSelected
                 ? [
                     BoxShadow(
-                        color: Colors.black.withOpacity(0.1),
+                        color: Colors.black.withValues(alpha: 0.1),
                         blurRadius: 4,
                         offset: const Offset(0, 2))
                   ]
@@ -479,7 +479,7 @@ class _CreatePostSheetState extends State<CreatePostSheet> {
         border: Border.all(color: Colors.grey.shade200),
         boxShadow: [
           BoxShadow(
-              color: Colors.black.withOpacity(0.03),
+              color: Colors.black.withValues(alpha: 0.03),
               blurRadius: 8,
               offset: const Offset(0, 4))
         ],
