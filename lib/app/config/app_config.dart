@@ -6,7 +6,7 @@ enum Environment { development, production }
 
 /// Configuración activa de la aplicación.
 /// Cambiar a [Environment.production] antes de compilar para producción.
-const Environment _environment = Environment.production;
+const Environment _environment = Environment.development;
 
 /// Clase de configuración que centraliza todas las URLs y constantes.
 /// Esto permite cambiar fácilmente entre entornos sin modificar código.

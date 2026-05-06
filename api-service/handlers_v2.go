@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"html"
 	"net/http"
@@ -322,9 +323,6 @@ func handleRegisterV2(c *gin.Context) {
 
 	Logger.Info("Usuario registrado", "user_id", userID, "email", req.Email)
 	RespondCreated(c, tokens)
-
-	// NOTA: Gorse ha sido retirado. El nuevo sistema ML no requiere registrar usuarios de antemano.
-	// El Tracking Service se encarga de recolectar los eventos interactuando con Postgres.
 }
 
 // handleRefreshToken renueva el par de tokens.
@@ -446,7 +444,7 @@ func handleUploadVideoV2(c *gin.Context) {
 		}
 	}
 
-	// Guardar en base de datos
+	// Guardar en base de datos con estado 'processing' (el Worker lo cambiará a 'ready')
 	video := &Video{
 		Title:        req.Title,
 		Description:  req.Description,
@@ -454,6 +452,7 @@ func handleUploadVideoV2(c *gin.Context) {
 		VideoURL:     result.URL,
 		ThumbnailURL: thumbnailURL,
 		ContentType:  contentType,
+		Status:       "processing",
 	}
 
 	videoID, err := Repos.Videos.Create(c.Request.Context(), video)
@@ -469,14 +468,108 @@ func handleUploadVideoV2(c *gin.Context) {
 	}
 
 	Logger.Info("Video subido", "video_id", videoID, "user_id", userID)
+
+	// Encolar tarea de procesamiento HLS en Redis (asíncrono, no bloquea)
+	go func() {
+		if Cache != nil {
+			taskPayload := map[string]interface{}{
+				"video_id":   fmt.Sprintf("%d", videoID),
+				"source_url": result.URL,
+			}
+			taskJSON, err := json.Marshal(taskPayload)
+			if err != nil {
+				Logger.Error("Error serializando tarea HLS", "error", err, "video_id", videoID)
+				return
+			}
+			// Encolar en la cola HLS (nombre configurable por entorno)
+			hlsQueueName := os.Getenv("HLS_QUEUE_NAME")
+			if hlsQueueName == "" {
+				hlsQueueName = "video_processing"
+			}
+			ctx := context.Background()
+			if err := Cache.EnqueueTask(ctx, hlsQueueName, string(taskJSON)); err != nil {
+				Logger.Error("Error encolando tarea HLS en Redis", "error", err, "video_id", videoID, "queue", hlsQueueName)
+			} else {
+				Logger.Info("Tarea HLS encolada exitosamente", "video_id", videoID, "queue", hlsQueueName)
+			}
+		} else {
+			Logger.Warn("Redis no disponible, video quedará sin HLS", "video_id", videoID)
+		}
+	}()
+
 	RespondCreated(c, gin.H{
 		"id":        videoID,
 		"video_url": result.URL,
-		"message":   "Video subido correctamente",
+		"status":    "processing",
+		"message":   "Video subido. El procesamiento HLS está en curso.",
 	})
+}
 
-	// NOTA: Gorse ha sido retirado. El nuevo sistema ML no requiere registrar items manualmente,
-	// pues lee directamente las features de contenido (y metadata) de la propia base de datos Postgres.
+// handleVideoReady recibe la notificación del Video Worker Python
+// cuando el procesamiento HLS ha terminado (o ha fallado).
+// Endpoint interno protegido con API Key: POST /api/v1/internal/video-ready
+func handleVideoReady(c *gin.Context) {
+	// Validar API Key interna
+	apiKey := c.GetHeader("X-Internal-API-Key")
+	expectedKey := os.Getenv("VIDEO_WORKER_API_KEY")
+	if expectedKey == "" || apiKey != expectedKey {
+		Logger.Warn("Intento de acceso no autorizado a /video-ready", "provided_key", apiKey[:min(len(apiKey), 8)]+"...")
+		RespondError(c, ErrUnauthorized())
+		return
+	}
+
+	var req struct {
+		VideoID string `json:"video_id" binding:"required"`
+		HlsURL  string `json:"hls_url"`
+		Status  string `json:"status" binding:"required"` // ready or failed
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		RespondError(c, ErrValidation("Formato de petición inválido"))
+		return
+	}
+
+	// Validar que el status sea válido
+	if req.Status != "ready" && req.Status != "failed" {
+		RespondError(c, ErrInvalidInput("status", "Status debe ser 'ready' o 'failed'"))
+		return
+	}
+
+	videoID, err := strconv.Atoi(req.VideoID)
+	if err != nil {
+		RespondError(c, ErrInvalidInput("video_id", "ID de video inválido"))
+		return
+	}
+
+	// Actualizar el video en la base de datos
+	var updateErr error
+	if req.Status == "ready" && req.HlsURL != "" {
+		_, updateErr = DB.ExecContext(c.Request.Context(),
+			`UPDATE contenidos SET hls_url = $1, status = 'ready' WHERE id_contenido = $2`,
+			req.HlsURL, videoID)
+	} else {
+		_, updateErr = DB.ExecContext(c.Request.Context(),
+			`UPDATE contenidos SET status = $1 WHERE id_contenido = $2`,
+			req.Status, videoID)
+	}
+
+	if updateErr != nil {
+		Logger.Error("Error actualizando estado del video", "error", updateErr, "video_id", videoID)
+		RespondError(c, ErrDatabase("Error al actualizar el video"))
+		return
+	}
+
+	// Invalidar caché del feed (el video cambió de estado)
+	if Cache != nil {
+		Cache.InvalidateFeed(c.Request.Context())
+	}
+
+	Logger.Info("Video processing callback received", "video_id", videoID, "status", req.Status)
+	RespondSuccess(c, gin.H{
+		"video_id": videoID,
+		"status":   req.Status,
+		"message":  "Video status updated successfully",
+	})
 }
 
 // handleRegisterView registra un evento de reproducción (view) para un video.
@@ -716,6 +809,83 @@ func handleGetCommentsV2(c *gin.Context) {
 	}
 
 	RespondSuccess(c, response)
+}
+
+// handleDeleteCommentV2 permite a un usuario borrar su propio comentario.
+func handleDeleteCommentV2(c *gin.Context) {
+	userIDVal, exists := c.Get("id_usuario")
+	if !exists {
+		Logger.Warn("Usuario no autenticado intentando borrar comentario")
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "No autorizado"})
+		return
+	}
+	userID := int(userIDVal.(float64))
+
+	commentID, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		Logger.Warn("ID de comentario inválido en delete", "id", c.Param("id"))
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ID de comentario inválido"})
+		return
+	}
+
+	ctx := context.Background()
+	err = Repos.Comments.Delete(ctx, commentID, userID)
+	if err != nil {
+		Logger.Error("Error borrando comentario", "error", err, "comment_id", commentID)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al borrar el comentario o no tienes permiso"})
+		return
+	}
+
+	// Invalidar caché (de forma simple)
+	videoID, _ := strconv.Atoi(c.Query("video_id")) // Opcional, para limpiar caché si se pasa
+	if videoID > 0 {
+		cacheKey := fmt.Sprintf("comments:video:%d", videoID)
+		Cache.Delete(ctx, cacheKey)
+	}
+
+	Logger.Info("Comentario borrado exitosamente", "comment_id", commentID, "user_id", userID)
+	c.JSON(http.StatusOK, gin.H{
+		"status":  "success",
+		"message": "Comentario eliminado",
+	})
+}
+
+// handleReportCommentV2 permite a un usuario reportar un comentario inapropiado.
+func handleReportCommentV2(c *gin.Context) {
+	userID := getUserIDFromContext(c)
+	if userID == 0 {
+		Logger.Warn("Usuario no autenticado intentando reportar comentario")
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "No autorizado"})
+		return
+	}
+
+	commentID, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ID de comentario inválido"})
+		return
+	}
+
+	var req struct {
+		Motivo string `json:"motivo" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Falta el motivo del reporte"})
+		return
+	}
+
+	ctx := context.Background()
+	err = Repos.Comments.Report(ctx, commentID, userID, req.Motivo)
+	if err != nil {
+		Logger.Error("Error guardando reporte de comentario", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "No se pudo enviar el reporte"})
+		return
+	}
+
+	Logger.Info("Comentario reportado", "comment_id", commentID, "user_id", userID, "motivo", req.Motivo)
+	c.JSON(http.StatusOK, gin.H{
+		"status":  "success",
+		"message": "Reporte enviado exitosamente. Gracias por ayudar a mantener la comunidad segura.",
+	})
 }
 
 // handleCreateCommentV2 crea comentario con validación.

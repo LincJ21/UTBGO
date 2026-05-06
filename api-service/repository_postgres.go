@@ -352,10 +352,10 @@ func (r *PostgresVideoRepository) Create(ctx context.Context, video *Video) (int
 	}
 
 	err := DB.QueryRowContext(ctx, `
-		INSERT INTO contenidos (titulo, descripcion, id_autor, id_tipo_contenido, id_estado_contenido, url_contenido, url_thumbnail, categoria)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id_contenido`,
+		INSERT INTO contenidos (titulo, descripcion, id_autor, id_tipo_contenido, id_estado_contenido, url_contenido, url_thumbnail, categoria, status)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id_contenido`,
 		video.Title, video.Description, video.AuthorID, typeID, publishedContentStateID,
-		video.VideoURL, video.ThumbnailURL, category).Scan(&videoID)
+		video.VideoURL, video.ThumbnailURL, category, video.Status).Scan(&videoID)
 
 	LogDB("INSERT", "contenidos", time.Since(start).Milliseconds(), err)
 
@@ -376,7 +376,7 @@ func (r *PostgresVideoRepository) GetFeed(ctx context.Context, limit, offset int
 
 	rows, err := DB.QueryContext(ctx, `
 		SELECT 
-			c.id_contenido, c.titulo, COALESCE(c.descripcion, ''), c.url_contenido, COALESCE(c.url_thumbnail, ''),
+			c.id_contenido, c.titulo, COALESCE(c.descripcion, ''), c.url_contenido, COALESCE(c.hls_url, ''), COALESCE(c.url_thumbnail, ''),
 			tc.codigo as content_type,
 			c.fecha_creacion,
 			(SELECT COUNT(*) FROM interacciones WHERE id_contenido = c.id_contenido AND id_tipo_interaccion = $1) as likes,
@@ -385,7 +385,8 @@ func (r *PostgresVideoRepository) GetFeed(ctx context.Context, limit, offset int
 			c.id_autor,
 			COALESCE((SELECT TRUE FROM interacciones WHERE id_usuario = $5 AND id_contenido = c.id_contenido AND id_tipo_interaccion = $1 LIMIT 1), FALSE) as is_liked,
 			COALESCE((SELECT TRUE FROM favoritos WHERE id_usuario = $5 AND id_contenido = c.id_contenido LIMIT 1), FALSE) as is_bookmarked,
-			COALESCE(c.categoria, 'General') as categoria
+			COALESCE(c.categoria, 'General') as categoria,
+			COALESCE(c.status, 'ready') as status
 		FROM contenidos c
 		JOIN tipos_contenido tc ON c.id_tipo_contenido = tc.id_tipo_contenido
 		LEFT JOIN perfiles p ON c.id_autor = p.id_usuario
@@ -404,7 +405,7 @@ func (r *PostgresVideoRepository) GetFeed(ctx context.Context, limit, offset int
 	var videos []Video
 	for rows.Next() {
 		var v Video
-		if err := rows.Scan(&v.ID, &v.Title, &v.Description, &v.VideoURL, &v.ThumbnailURL, &v.ContentType, &v.CreatedAt, &v.Likes, &v.Comments, &v.AuthorName, &v.AuthorID, &v.IsLiked, &v.IsBookmarked, &v.Category); err != nil {
+		if err := rows.Scan(&v.ID, &v.Title, &v.Description, &v.VideoURL, &v.HlsURL, &v.ThumbnailURL, &v.ContentType, &v.CreatedAt, &v.Likes, &v.Comments, &v.AuthorName, &v.AuthorID, &v.IsLiked, &v.IsBookmarked, &v.Category, &v.Status); err != nil {
 			Logger.Warn("Error scanning feed row", "error", err)
 			continue
 		}
@@ -429,7 +430,7 @@ func (r *PostgresVideoRepository) GetByAuthor(ctx context.Context, authorID int,
 	// Por ahora limitamos a 50 pero se podría paginar en el futuro.
 	rows, err := DB.QueryContext(ctx, `
 		SELECT 
-			c.id_contenido, c.titulo, COALESCE(c.descripcion, ''), c.url_contenido, COALESCE(c.url_thumbnail, ''),
+			c.id_contenido, c.titulo, COALESCE(c.descripcion, ''), c.url_contenido, COALESCE(c.hls_url, ''), COALESCE(c.url_thumbnail, ''),
 			tc.codigo as content_type,
 			c.fecha_creacion,
 			(SELECT COUNT(*) FROM interacciones WHERE id_contenido = c.id_contenido AND id_tipo_interaccion = $1) as likes,
@@ -438,7 +439,8 @@ func (r *PostgresVideoRepository) GetByAuthor(ctx context.Context, authorID int,
 			c.id_autor,
 			COALESCE((SELECT TRUE FROM interacciones WHERE id_usuario = $4 AND id_contenido = c.id_contenido AND id_tipo_interaccion = $1 LIMIT 1), FALSE) as is_liked,
 			COALESCE((SELECT TRUE FROM favoritos WHERE id_usuario = $4 AND id_contenido = c.id_contenido LIMIT 1), FALSE) as is_bookmarked,
-			COALESCE(c.categoria, 'General') as categoria
+			COALESCE(c.categoria, 'General') as categoria,
+			COALESCE(c.status, 'ready') as status
 		FROM contenidos c
 		JOIN tipos_contenido tc ON c.id_tipo_contenido = tc.id_tipo_contenido
 		LEFT JOIN perfiles p ON c.id_autor = p.id_usuario
@@ -457,7 +459,7 @@ func (r *PostgresVideoRepository) GetByAuthor(ctx context.Context, authorID int,
 	var videos []Video
 	for rows.Next() {
 		var v Video
-		if err := rows.Scan(&v.ID, &v.Title, &v.Description, &v.VideoURL, &v.ThumbnailURL, &v.ContentType, &v.CreatedAt, &v.Likes, &v.Comments, &v.AuthorName, &v.AuthorID, &v.IsLiked, &v.IsBookmarked, &v.Category); err != nil {
+		if err := rows.Scan(&v.ID, &v.Title, &v.Description, &v.VideoURL, &v.HlsURL, &v.ThumbnailURL, &v.ContentType, &v.CreatedAt, &v.Likes, &v.Comments, &v.AuthorName, &v.AuthorID, &v.IsLiked, &v.IsBookmarked, &v.Category, &v.Status); err != nil {
 			Logger.Warn("Error scanning author publications row", "error", err)
 			continue
 		}
@@ -488,7 +490,7 @@ func (r *PostgresVideoRepository) Search(ctx context.Context, query string, date
 
 	baseSQL := `
 		SELECT 
-			c.id_contenido, c.titulo, COALESCE(c.descripcion, ''), c.url_contenido, COALESCE(c.url_thumbnail, ''),
+			c.id_contenido, c.titulo, COALESCE(c.descripcion, ''), c.url_contenido, COALESCE(c.hls_url, ''), COALESCE(c.url_thumbnail, ''),
 			tc.codigo as content_type,
 			c.fecha_creacion,
 			(SELECT COUNT(*) FROM interacciones WHERE id_contenido = c.id_contenido AND id_tipo_interaccion = $1) as likes,
@@ -497,7 +499,8 @@ func (r *PostgresVideoRepository) Search(ctx context.Context, query string, date
 			c.id_autor,
 			COALESCE((SELECT TRUE FROM interacciones WHERE id_usuario = $4 AND id_contenido = c.id_contenido AND id_tipo_interaccion = $1 LIMIT 1), FALSE) as is_liked,
 			COALESCE((SELECT TRUE FROM favoritos WHERE id_usuario = $4 AND id_contenido = c.id_contenido LIMIT 1), FALSE) as is_bookmarked,
-			COALESCE(c.categoria, 'General') as categoria
+			COALESCE(c.categoria, 'General') as categoria,
+			COALESCE(c.status, 'ready') as status
 		FROM contenidos c
 		JOIN tipos_contenido tc ON c.id_tipo_contenido = tc.id_tipo_contenido
 		LEFT JOIN perfiles p ON c.id_autor = p.id_usuario
@@ -545,7 +548,7 @@ func (r *PostgresVideoRepository) Search(ctx context.Context, query string, date
 	var videos []Video
 	for rows.Next() {
 		var v Video
-		if err := rows.Scan(&v.ID, &v.Title, &v.Description, &v.VideoURL, &v.ThumbnailURL, &v.ContentType, &v.CreatedAt, &v.Likes, &v.Comments, &v.AuthorName, &v.AuthorID, &v.IsLiked, &v.IsBookmarked, &v.Category); err != nil {
+		if err := rows.Scan(&v.ID, &v.Title, &v.Description, &v.VideoURL, &v.HlsURL, &v.ThumbnailURL, &v.ContentType, &v.CreatedAt, &v.Likes, &v.Comments, &v.AuthorName, &v.AuthorID, &v.IsLiked, &v.IsBookmarked, &v.Category, &v.Status); err != nil {
 			Logger.Warn("Error scanning search result row", "error", err)
 			continue
 		}
@@ -576,7 +579,7 @@ func (r *PostgresVideoRepository) GetByIDs(ctx context.Context, ids []int) ([]Vi
 	}
 
 	start := time.Now()
-	// Usar ANY($1) y array_position para mantener el orden de ranking de Gorse
+	// Usar ANY($1) y array_position para mantener el orden de ranking del modelo de recomendaciones
 	rows, err := DB.QueryContext(ctx, `
 		SELECT 
 			c.id_contenido, c.titulo, COALESCE(c.descripcion, ''), c.url_contenido, COALESCE(c.url_thumbnail, ''),
@@ -622,7 +625,7 @@ func (r *PostgresVideoRepository) GetPopular(ctx context.Context, limit int, use
 
 	rows, err := DB.QueryContext(ctx, `
 		SELECT 
-			c.id_contenido, c.titulo, COALESCE(c.descripcion, ''), c.url_contenido, COALESCE(c.url_thumbnail, ''),
+			c.id_contenido, c.titulo, COALESCE(c.descripcion, ''), c.url_contenido, COALESCE(c.hls_url, ''), COALESCE(c.url_thumbnail, ''),
 			tc.codigo as content_type,
 			c.fecha_creacion,
 			(SELECT COUNT(*) FROM interacciones WHERE id_contenido = c.id_contenido AND id_tipo_interaccion = $1) as likes,
@@ -630,7 +633,9 @@ func (r *PostgresVideoRepository) GetPopular(ctx context.Context, limit int, use
 			COALESCE(p.nombre || ' ' || COALESCE(p.apellido, ''), 'Usuario UTB') as author_name, 
 			c.id_autor,
 			COALESCE((SELECT TRUE FROM interacciones WHERE id_usuario = $4 AND id_contenido = c.id_contenido AND id_tipo_interaccion = $1 LIMIT 1), FALSE) as is_liked,
-			COALESCE((SELECT TRUE FROM favoritos WHERE id_usuario = $4 AND id_contenido = c.id_contenido LIMIT 1), FALSE) as is_bookmarked
+			COALESCE((SELECT TRUE FROM favoritos WHERE id_usuario = $4 AND id_contenido = c.id_contenido LIMIT 1), FALSE) as is_bookmarked,
+			COALESCE(c.categoria, 'General') as categoria,
+			COALESCE(c.status, 'ready') as status
 		FROM contenidos c
 		JOIN tipos_contenido tc ON c.id_tipo_contenido = tc.id_tipo_contenido
 		LEFT JOIN perfiles p ON c.id_autor = p.id_usuario
@@ -649,7 +654,7 @@ func (r *PostgresVideoRepository) GetPopular(ctx context.Context, limit int, use
 	var videos []Video
 	for rows.Next() {
 		var v Video
-		if err := rows.Scan(&v.ID, &v.Title, &v.Description, &v.VideoURL, &v.ThumbnailURL, &v.ContentType, &v.CreatedAt, &v.Likes, &v.Comments, &v.AuthorName, &v.AuthorID, &v.IsLiked, &v.IsBookmarked); err != nil {
+		if err := rows.Scan(&v.ID, &v.Title, &v.Description, &v.VideoURL, &v.HlsURL, &v.ThumbnailURL, &v.ContentType, &v.CreatedAt, &v.Likes, &v.Comments, &v.AuthorName, &v.AuthorID, &v.IsLiked, &v.IsBookmarked, &v.Category, &v.Status); err != nil {
 			Logger.Warn("Error scanning popular result row", "error", err)
 			continue
 		}
@@ -1012,6 +1017,20 @@ func (r *PostgresProfileRepository) GetConnections(ctx context.Context, userID i
 
 	LogDB("SELECT", "seguidores_y_seguidos", time.Since(start).Milliseconds(), nil)
 	return resp, nil
+}
+
+// Report crea un reporte de un comentario por parte de un usuario.
+func (r *PostgresCommentRepository) Report(ctx context.Context, commentID, userID int, motivo string) error {
+	query := `
+		INSERT INTO comentarios_reportes (id_comentario, id_usuario_reporta, motivo)
+		VALUES ($1, $2, $3)
+	`
+	_, err := DB.ExecContext(ctx, query, commentID, userID, motivo)
+	if err != nil {
+		Logger.Error("Error reportando comentario", "error", err, "comment_id", commentID, "user_id", userID)
+		return err
+	}
+	return nil
 }
 
 func (r *PostgresCommentRepository) CountByVideoID(ctx context.Context, videoID int) (int, error) {

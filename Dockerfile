@@ -4,7 +4,7 @@
 # Multi-stage build para imagen mínima y segura
 
 # ----- Etapa 1: Build -----
-FROM golang:1.24-alpine AS builder
+FROM golang:1.25-alpine AS builder
 
 # Instalar certificados CA para HTTPS y git para go mod
 RUN apk add --no-cache ca-certificates git
@@ -13,6 +13,9 @@ WORKDIR /build
 
 # Copiar archivos de dependencias primero (mejor cache de capas)
 COPY api-service/go.mod api-service/go.sum ./
+
+# Configurar GOTOOLCHAIN=auto para permitir la descarga de la version solicitada por go.mod
+ENV GOTOOLCHAIN=auto
 
 # Descargar dependencias
 RUN go mod download

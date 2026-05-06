@@ -518,7 +518,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
               if (_selectedPublicationTab == 0) {
                 filteredVideos = allVideos.where((v) => v.contentType == 'video').toList();
               } else if (_selectedPublicationTab == 1) {
-                filteredVideos = allVideos.where((v) => v.contentType == 'poll').toList();
+                // En la BD el tipo de contenido se llama 'encuesta'
+                filteredVideos = allVideos.where((v) => v.contentType == 'poll' || v.contentType == 'encuesta').toList();
               } else if (_selectedPublicationTab == 2) {
                 filteredVideos = allVideos.where((v) => v.contentType == 'flashcard').toList();
               }

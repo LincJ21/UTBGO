@@ -86,4 +86,23 @@ class AdminApiService {
       fromJson: (_) {},
     );
   }
+
+  Future<ApiResponse<PaginatedResponse<AdminReport>>> getReports({int page = 1}) async {
+    final uri = Uri.parse('$_baseUrl/reports').replace(queryParameters: {'page': page.toString()});
+
+    return _api.get<PaginatedResponse<AdminReport>>(
+      uri.toString(),
+      requiresAuth: true,
+      fromJson: (json) => PaginatedResponse.fromJson(json, (j) => AdminReport.fromJson(j)),
+    );
+  }
+
+  Future<ApiResponse<void>> resolveReport(int reportId, String action) async {
+    return _api.patch<void>(
+      '$_baseUrl/reports/$reportId/resolve',
+      requiresAuth: true,
+      body: {'action': action},
+      fromJson: (_) {},
+    );
+  }
 }

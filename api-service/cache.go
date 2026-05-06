@@ -254,3 +254,13 @@ func (cs *CacheService) InvalidateComments(ctx context.Context, videoID int) {
 		Logger.Warn("Error invalidando caché de comentarios", "error", err)
 	}
 }
+
+// --- Operaciones de Cola (Queue) ---
+
+// EnqueueTask empuja una tarea a una cola Redis (compatible con RQ de Python).
+// queueName: nombre de la cola (ej: "video_processing")
+// payload: el JSON de la tarea a encolar
+func (cs *CacheService) EnqueueTask(ctx context.Context, queueName string, payload string) error {
+	return cs.client.LPush(ctx, "rq:queue:"+queueName, payload).Err()
+}
+

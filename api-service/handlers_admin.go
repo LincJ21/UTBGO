@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -432,6 +433,65 @@ func handleAdminListComments(c *gin.Context) {
 			"page_size":   pageSize,
 			"total_pages": CalculateTotalPages(total, pageSize),
 		},
+	})
+}
+
+// handleGetReports devuelve los reportes pendientes.
+func handleGetReports(c *gin.Context) {
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+
+	ctx := context.Background()
+	reports, total, err := Repos.Admin.GetPendingReports(ctx, page, limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al obtener reportes"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"data": reports,
+		"meta": gin.H{
+			"total": total,
+			"page":  page,
+			"limit": limit,
+		},
+	})
+}
+
+// handleResolveReport permite al admin ignorar un reporte o borrar el comentario.
+func handleResolveReport(c *gin.Context) {
+	reportID, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ID inválido"})
+		return
+	}
+
+	var req struct {
+		Action string `json:"action" binding:"required,oneof=ignore delete"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Acción inválida. Debe ser 'ignore' o 'delete'"})
+		return
+	}
+
+	ctx := context.Background()
+	videoID, err := Repos.Admin.ResolveReport(ctx, reportID, req.Action)
+	if err != nil {
+		Logger.Error("Error resolviendo reporte", "error", err, "report_id", reportID)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al procesar el reporte"})
+		return
+	}
+
+	// Limpiar caché si se eliminó el comentario
+	if req.Action == "delete" && videoID > 0 {
+		if Cache != nil {
+			cacheKey := fmt.Sprintf("comments:video:%d", videoID)
+			Cache.Delete(ctx, cacheKey)
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Reporte resuelto correctamente",
 	})
 }
 

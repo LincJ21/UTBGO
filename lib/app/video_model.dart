@@ -2,12 +2,14 @@ class VideoModel {
   final String id;
   final String title;
   final String videoUrl;
+  final String? hlsUrl;
   final String thumbnailUrl;
   final String description;
   final String authorName;
   final int authorId;
   final String contentType;
   final String category;
+  final String status;
   final DateTime createdAt;
   int likes;
   int comments;
@@ -20,12 +22,14 @@ class VideoModel {
     required this.id,
     required this.title,
     required this.videoUrl,
+    this.hlsUrl,
     required this.thumbnailUrl,
     required this.description,
     this.authorName = 'Profesor UTB',
     this.authorId = 0,
     this.contentType = 'video',
     this.category = 'General',
+    this.status = 'ready',
     required this.createdAt,
     // Valores iniciales
     required this.likes,
@@ -42,12 +46,14 @@ class VideoModel {
       'id': id,
       'title': title,
       'videoUrl': videoUrl,
+      'hls_url': hlsUrl,
       'thumbnail_url': thumbnailUrl,
       'description': description,
       'author_name': authorName,
       'author_id': authorId,
       'content_type': contentType,
       'category': category,
+      'status': status,
       'created_at': createdAt.toIso8601String(),
       'likes': likes,
       'comments': comments,
@@ -64,12 +70,14 @@ class VideoModel {
       id: json['id']?.toString() ?? '',
       title: json['title'] ?? 'Sin Título',
       videoUrl: json['video_url'] ?? json['videoUrl'] ?? '',
+      hlsUrl: json['hls_url'],
       thumbnailUrl: json['thumbnail_url'] ?? '',
       description: json['description'] ?? '',
       authorName: json['author_name'] ?? 'Profesor UTB',
       authorId: json['author_id'] != null ? int.tryParse(json['author_id'].toString()) ?? 0 : 0,
       contentType: json['content_type'] ?? 'video',
       category: json['category'] ?? 'General',
+      status: json['status'] ?? 'ready',
       createdAt: json['created_at'] != null 
           ? DateTime.tryParse(json['created_at']) ?? DateTime.now()
           : DateTime.now(),
@@ -88,12 +96,16 @@ class VideoModel {
       id: (json['id'] ?? 0).toString(),
       title: json['title'] ?? 'Sin Título',
       videoUrl: json['video_url'] ?? '',
-      thumbnailUrl: json['thumbnail_url'] ?? '',
+      hlsUrl: json['hls_url'],
+      thumbnailUrl: (json['thumbnail_url'] != null && json['thumbnail_url'].toString().toLowerCase().endsWith('.mp4')) 
+          ? '' 
+          : (json['thumbnail_url'] ?? ''),
       description: json['description'] ?? 'Sin descripción',
       authorName: json['author_name'] ?? 'Profesor UTB',
       authorId: json['author_id'] is int ? json['author_id'] : int.tryParse(json['author_id']?.toString() ?? '0') ?? 0,
       contentType: json['content_type'] ?? 'video',
       category: json['category'] ?? 'General',
+      status: json['status'] ?? 'ready',
       createdAt: json['created_at'] != null
           ? DateTime.tryParse(json['created_at']) ?? DateTime.now()
           : DateTime.now(),

@@ -165,6 +165,41 @@ class AdminVideo {
   }
 }
 
+class AdminReport {
+  final int reportId;
+  final int commentId;
+  final String motivo;
+  final String estado;
+  final DateTime fechaCreacion;
+  final String commentText;
+  final String authorName;
+  final String reporterName;
+
+  AdminReport({
+    required this.reportId,
+    required this.commentId,
+    required this.motivo,
+    required this.estado,
+    required this.fechaCreacion,
+    required this.commentText,
+    required this.authorName,
+    required this.reporterName,
+  });
+
+  factory AdminReport.fromJson(Map<String, dynamic> json) {
+    return AdminReport(
+      reportId: json['report_id'] ?? 0,
+      commentId: json['comment_id'] ?? 0,
+      motivo: json['motivo'] ?? '',
+      estado: json['estado'] ?? '',
+      fechaCreacion: json['fecha_creacion'] != null ? DateTime.parse(json['fecha_creacion']) : DateTime.now(),
+      commentText: json['comment_text'] ?? '',
+      authorName: json['author_name'] ?? '',
+      reporterName: json['reporter_name'] ?? '',
+    );
+  }
+}
+
 class PaginatedResponse<T> {
   final List<T> data;
   final int total;

@@ -74,7 +74,7 @@ func handleGetSimilarRecommendations(c *gin.Context) {
 	c.JSON(http.StatusOK, similarVideos)
 }
 
-// fetchAndReturnContents es un helper para hidratar los IDs de Gorse con los datos de la BD.
+// fetchAndReturnContents es un helper para hidratar los IDs recomendados con los datos de la BD.
 func fetchAndReturnContents(c *gin.Context, ids []int) {
 	if len(ids) == 0 {
 		c.JSON(http.StatusOK, []any{})

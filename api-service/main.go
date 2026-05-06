@@ -30,10 +30,6 @@ var bookmarkInteractionTypeID int
 var repostInteractionTypeID int
 var activeCommentStateID int
 
-// Gorse es el cliente global para el motor de recomendaciones.
-// Gorse es el cliente global para el motor de recomendaciones.
-// var Gorse *GorseClientWrapper
-
 // MLRecommend es el cliente global para el nuevo sistema ML de recomendaciones
 // RecommendationEngine define la interfaz estándar para obtener recomendaciones
 type RecommendationEngine interface {
@@ -356,19 +352,12 @@ func main() {
 		Logger.Info("Redis inicializado (caché + rate limiting distribuido)")
 	}
 
-	// --- Inicialización de Gorse (Recomendaciones) ---
-	// --- Inicialización del Motor de Recomendaciones (Patrón Estrategia) ---
-	engineType := strings.ToLower(os.Getenv("PRIMARY_RECOMMENDATION_ENGINE"))
-	if engineType == "gorse" {
-		MLRecommend = NewGorseClient(os.Getenv("GORSE_SERVER_URL"), os.Getenv("GORSE_API_KEY"))
-		if MLRecommend != nil {
-			Logger.Info("Motor de Recomendaciones: GORSE (Enterprise Fallback)")
-		}
+	// --- Inicialización del Motor de Recomendaciones ---
+	MLRecommend = NewCustomRecommendationClient(os.Getenv("RECOMMENDATIONS_SERVICE_URL"), os.Getenv("RECOMMENDATIONS_API_KEY"))
+	if MLRecommend != nil {
+		Logger.Info("Motor de Recomendaciones: CUSTOM ML (Python)")
 	} else {
-		MLRecommend = NewCustomRecommendationClient(os.Getenv("RECOMMENDATIONS_SERVICE_URL"), os.Getenv("RECOMMENDATIONS_API_KEY"))
-		if MLRecommend != nil {
-			Logger.Info("Motor de Recomendaciones: CUSTOM ML (Python)")
-		}
+		Logger.Warn("Motor de Recomendaciones no inicializado (Faltan variables de entorno)")
 	}
 
 	router := gin.Default()
@@ -380,14 +369,14 @@ func main() {
 	// Rate Limiting: 100 requests por minuto por IP
 	// Si Redis está disponible, usa rate limiter distribuido (funciona multi-instancia).
 	// Si no, usa el rate limiter in-memory (solo single-instance).
-	if Cache != nil {
-		redisRL := NewRedisRateLimiter(cacheService.client, 100, time.Minute)
+	if cacheService.client != nil {
+		redisRL := NewRedisRateLimiter(cacheService.client, 600, time.Minute)
 		router.Use(RedisRateLimitMiddleware(redisRL))
-		Logger.Info("Rate limiter: Redis (distribuido)")
+		Logger.Info("Rate limiter distribuido (Redis) activado: 600 req/min")
 	} else {
-		rateLimiter := NewRateLimiter(100, time.Minute)
+		rateLimiter := NewRateLimiter(600, time.Minute)
 		router.Use(RateLimitMiddleware(rateLimiter))
-		Logger.Info("Rate limiter: in-memory (solo single-instance)")
+		Logger.Info("Rate limiter local (Memoria) activado: 600 req/min")
 	}
 
 	// --- AUMENTAR LÍMITE DE SUBIDA DE ARCHIVOS ---
@@ -499,10 +488,17 @@ func main() {
 			videos.POST("/:id/comments", AuthMiddleware(), handleCreateCommentV2)
 		}
 
+		// Comentarios (rutas directas)
+		comments := v1.Group("/comments")
+		{
+			comments.DELETE("/:id", AuthMiddleware(), handleDeleteCommentV2)
+			comments.POST("/:id/report", AuthMiddleware(), handleReportCommentV2)
+		}
+
 		// Tendencias
 		v1.GET("/trends", handleGetTrends)
 
-		// Recomendaciones (Gorse)
+		// Recomendaciones
 		recommend := v1.Group("/recommend")
 		{
 			// GET /api/v1/recommend/personalized?category=video&n=10
@@ -594,6 +590,21 @@ func main() {
 				adminComments.GET("", RequireModerator(), handleAdminListComments)         // Listar comentarios
 				adminComments.DELETE("/:id", RequireModerator(), handleAdminDeleteComment) // Eliminar comentario
 			}
+
+			// Gestión de Denuncias
+			adminReports := admin.Group("/reports")
+			{
+				adminReports.GET("", RequireModerator(), handleGetReports)
+				adminReports.PATCH("/:id/resolve", RequireModerator(), handleResolveReport)
+			}
+		}
+
+		// --- Rutas Internas (Comunicación entre microservicios) ---
+		// Protegidas con API Key interna, NO accesibles desde Flutter.
+		internal := v1.Group("/internal")
+		{
+			// Callback del Video Worker Python cuando termina el procesamiento HLS
+			internal.POST("/video-ready", handleVideoReady)
 		}
 	}
 

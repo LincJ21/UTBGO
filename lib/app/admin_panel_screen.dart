@@ -19,7 +19,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 3,
+      length: 4,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Panel de Administración', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
@@ -29,10 +29,14 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
             labelColor: Colors.white,
             unselectedLabelColor: Colors.white70,
             indicatorColor: Colors.amber,
+            labelPadding: EdgeInsets.symmetric(horizontal: 4.0),
+            labelStyle: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+            unselectedLabelStyle: TextStyle(fontSize: 12),
             tabs: [
-              Tab(icon: Icon(Icons.dashboard), text: 'Dashboard'),
-              Tab(icon: Icon(Icons.people), text: 'Usuarios'),
-              Tab(icon: Icon(Icons.video_library), text: 'Videos'),
+              Tab(icon: Icon(Icons.dashboard, size: 22), text: 'Dashboard'),
+              Tab(icon: Icon(Icons.people, size: 22), text: 'Usuarios'),
+              Tab(icon: Icon(Icons.video_library, size: 22), text: 'Videos'),
+              Tab(icon: Icon(Icons.flag, size: 22), text: 'Denuncias'),
             ],
           ),
         ),
@@ -41,6 +45,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
             _DashboardTab(),
             _UsersTab(),
             _VideosTab(),
+            _ReportsTab(),
           ],
         ),
       ),
@@ -675,6 +680,201 @@ class _VideosTabState extends State<_VideosTab> {
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(color: color.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(12)),
       child: Text(status.toUpperCase(), style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.bold)),
+    );
+  }
+}
+
+// ----------------------------------------------------------------------
+// TAB 4: DENUNCIAS (REPORTES)
+// ----------------------------------------------------------------------
+class _ReportsTab extends StatefulWidget {
+  const _ReportsTab();
+
+  @override
+  State<_ReportsTab> createState() => _ReportsTabState();
+}
+
+class _ReportsTabState extends State<_ReportsTab> {
+  final AdminApiService _apiService = AdminApiService();
+  
+  final List<AdminReport> _reports = [];
+  bool _isLoading = false;
+  int _currentPage = 1;
+  bool _hasMore = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadReports();
+  }
+
+  Future<void> _loadReports({bool refresh = false}) async {
+    if (_isLoading) return;
+    if (refresh) {
+      setState(() {
+        _currentPage = 1;
+        _hasMore = true;
+        _reports.clear();
+      });
+    }
+
+    setState(() => _isLoading = true);
+
+    final response = await _apiService.getReports(page: _currentPage);
+
+    if (response.isSuccess && response.data != null) {
+      if (mounted) {
+        setState(() {
+          _reports.addAll(response.data!.data);
+          _currentPage++;
+          if (response.data!.page >= response.data!.totalPages) {
+            _hasMore = false;
+          }
+          _isLoading = false;
+        });
+      }
+    } else {
+      if (mounted) setState(() => _isLoading = false);
+      _showError(response.error?.message ?? 'Error cargando denuncias');
+    }
+  }
+
+  void _showError(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), backgroundColor: Colors.red));
+  }
+
+  Future<void> _resolveReport(AdminReport report, String action) async {
+    // action puede ser 'ignore' o 'delete'
+    final res = await _apiService.resolveReport(report.reportId, action);
+    if (!mounted) return;
+    if (res.isSuccess) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Reporte gestionado')));
+      _loadReports(refresh: true);
+    } else {
+      _showError(res.error?.message ?? 'Error al procesar el reporte');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        const Padding(
+          padding: EdgeInsets.all(16.0),
+          child: Text(
+            'Denuncias Pendientes de Revisión',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87),
+          ),
+        ),
+        Expanded(
+          child: RefreshIndicator(
+            onRefresh: () => _loadReports(refresh: true),
+            child: _reports.isEmpty && !_isLoading
+                ? const Center(child: Text('¡Excelente! No hay denuncias pendientes.'))
+                : ListView.builder(
+                    itemCount: _reports.length + (_hasMore ? 1 : 0),
+                    itemBuilder: (context, index) {
+                      if (index == _reports.length) {
+                        if (!_isLoading) _loadReports();
+                        return const Center(child: Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator()));
+                      }
+                      final report = _reports[index];
+                      return _buildReportCard(report);
+                    },
+                  ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildReportCard(AdminReport report) {
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: Colors.red.shade100)),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(Icons.warning_amber_rounded, color: Colors.red, size: 22),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Motivo: ${report.motivo}',
+                    style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.red, fontSize: 16),
+                  ),
+                ),
+                Text(
+                  '${report.fechaCreacion.day}/${report.fechaCreacion.month}/${report.fechaCreacion.year}',
+                  style: const TextStyle(color: Colors.grey, fontSize: 12),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.red.shade50.withValues(alpha: 0.5), 
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.red.shade100, width: 1),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.person_outline, size: 16, color: Colors.black54),
+                      const SizedBox(width: 4),
+                      Text('Comentario de ${report.authorName}:', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.black87)),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text('"${report.commentText}"', style: const TextStyle(fontStyle: FontStyle.italic, fontSize: 15, color: Colors.black87)),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                const Icon(Icons.flag_outlined, size: 14, color: Colors.grey),
+                const SizedBox(width: 4),
+                Text('Denunciado por: ${report.reporterName}', style: const TextStyle(fontSize: 12, color: Colors.black54)),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Wrap(
+              alignment: WrapAlignment.end,
+              spacing: 8.0,
+              runSpacing: 8.0,
+              children: [
+                TextButton.icon(
+                  onPressed: () => _resolveReport(report, 'ignore'),
+                  icon: const Icon(Icons.close, color: Colors.grey, size: 18),
+                  label: const Text('Ignorar', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
+                ),
+                ElevatedButton.icon(
+                  onPressed: () => _resolveReport(report, 'delete'),
+                  icon: const Icon(Icons.delete_outline, size: 18),
+                  label: const Text('Eliminar', style: TextStyle(fontWeight: FontWeight.bold)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red.shade600, 
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

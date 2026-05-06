@@ -483,6 +483,77 @@ func (r *PostgresAdminRepository) ListComments(ctx context.Context, page, pageSi
 	return comments, total, nil
 }
 
+// GetPendingReports obtiene los reportes pendientes de moderación.
+func (r *PostgresAdminRepository) GetPendingReports(ctx context.Context, page, pageSize int) ([]ReportAdminDTO, int, error) {
+	offset := (page - 1) * pageSize
+	query := `
+		SELECT 
+			r.id_reporte, r.id_comentario, r.motivo, r.estado, r.fecha_creacion, 
+			c.texto as comment_text, 
+			COALESCE(p_autor.nombre || ' ' || p_autor.apellido, u.email) as author_name, 
+			COALESCE(p_reporter.nombre || ' ' || p_reporter.apellido, ru.email) as reporter_name
+		FROM comentarios_reportes r
+		JOIN comentarios c ON r.id_comentario = c.id_comentario
+		JOIN usuarios u ON c.id_usuario = u.id_usuario
+		LEFT JOIN perfiles p_autor ON u.id_usuario = p_autor.id_usuario
+		JOIN usuarios ru ON r.id_usuario_reporta = ru.id_usuario
+		LEFT JOIN perfiles p_reporter ON ru.id_usuario = p_reporter.id_usuario
+		WHERE r.estado = 'pendiente'
+		ORDER BY r.fecha_creacion DESC
+		LIMIT $1 OFFSET $2
+	`
+	rows, err := DB.QueryContext(ctx, query, pageSize, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	var reports []ReportAdminDTO
+	for rows.Next() {
+		var report ReportAdminDTO
+		if err := rows.Scan(
+			&report.ReportID, &report.CommentID, &report.Motivo, &report.Estado, &report.FechaCreacion,
+			&report.CommentText, &report.AuthorName, &report.ReporterName,
+		); err != nil {
+			return nil, 0, err
+		}
+		reports = append(reports, report)
+	}
+
+	var total int
+	err = DB.QueryRowContext(ctx, "SELECT count(*) FROM comentarios_reportes WHERE estado = 'pendiente'").Scan(&total)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return reports, total, nil
+}
+
+// ResolveReport marca un reporte como ignorado o borra el comentario.
+func (r *PostgresAdminRepository) ResolveReport(ctx context.Context, reportID int, action string) (int, error) {
+	if action == "ignore" {
+		_, err := DB.ExecContext(ctx, "UPDATE comentarios_reportes SET estado = 'ignorado' WHERE id_reporte = $1", reportID)
+		return 0, err
+	} else if action == "delete" {
+		// Obtenemos id_comentario e id_contenido para limpiar la caché luego
+		var commentID, videoID int
+		err := DB.QueryRowContext(ctx, `
+			SELECT r.id_comentario, c.id_contenido 
+			FROM comentarios_reportes r
+			JOIN comentarios c ON r.id_comentario = c.id_comentario
+			WHERE r.id_reporte = $1`, reportID).Scan(&commentID, &videoID)
+		
+		if err != nil {
+			return 0, err
+		}
+		
+		// Borrar el comentario (el reporte se borra en cascada)
+		err = r.DeleteComment(ctx, commentID)
+		return videoID, err
+	}
+	return 0, fmt.Errorf("acción de moderación inválida")
+}
+
 // DeleteComment elimina un comentario por un administrador (sin verificar autoría).
 func (r *PostgresAdminRepository) DeleteComment(ctx context.Context, commentID int) error {
 	start := time.Now()

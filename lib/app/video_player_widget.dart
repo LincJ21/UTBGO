@@ -155,8 +155,14 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
     super.initState();
     _isImage = widget.video.contentType == 'imagen';
     if (!_isImage) {
-      _controller =
-          VideoPlayerController.networkUrl(Uri.parse(widget.video.videoUrl));
+      // Usar HLS si está disponible y listo, sino usar MP4 como fallback de contingencia
+      final useHls = widget.video.status == 'ready' && 
+                     widget.video.hlsUrl != null && 
+                     widget.video.hlsUrl!.isNotEmpty;
+                     
+      final videoSource = useHls ? widget.video.hlsUrl! : widget.video.videoUrl;
+      
+      _controller = VideoPlayerController.networkUrl(Uri.parse(videoSource));
       _controller!.initialize().then((_) {
         setState(() {});
         _controller!.play();

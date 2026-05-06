@@ -1,0 +1,56 @@
+#cloud-config
+package_upgrade: true
+
+packages:
+  - apt-transport-https
+  - ca-certificates
+  - curl
+  - software-properties-common
+  - git
+
+runcmd:
+  # 1. Instalar Docker
+  - curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+  - add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+  - apt-get update
+  - apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+  
+  # 2. Configurar permisos de Docker para adminuser
+  - usermod -aG docker adminuser
+  
+  # 3. Descargar el código fuente de UTBGO
+  - cd /home/adminuser
+  - git clone https://github.com/JFredy10/utbgo-app.git utbgo-repo
+  - cd utbgo-repo
+  
+  # 4. Crear archivo .env dinámico usando las variables renderizadas por Terraform
+  - |
+    cat <<EOF > .env
+    # Database
+    DB_CONNECTION_STRING="${db_connection_string}"
+    
+    # External Services
+    STORAGE_PROVIDER="cloudinary"
+    CLOUDINARY_URL="${cloudinary_url}"
+    REDIS_URL="${redis_url}"
+    
+    # Authentication
+    JWT_SECRET_KEY="${jwt_secret_key}"
+    FIREBASE_PROJECT_ID="${firebase_project_id}"
+    GOOGLE_CLIENT_ID="${google_client_id}"
+    
+    # Internal APIs
+    TRACKING_API_KEY="${tracking_api_key}"
+    RECOMMENDATIONS_API_KEY="${recommendations_api_key}"
+    VIDEO_WORKER_API_KEY="${video_worker_api_key}"
+    
+    # App Config
+    ADMIN_EMAILS="${admin_emails}"
+    HLS_QUEUE_NAME="${hls_queue_name}"
+    EOF
+  
+  # 5. Ajustar permisos
+  - chown -R adminuser:adminuser /home/adminuser/utbgo-repo
+  
+  # 6. Levantar los contenedores
+  - su - adminuser -c "cd /home/adminuser/utbgo-repo && docker compose up -d --build"

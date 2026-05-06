@@ -1,45 +1,84 @@
-## Arquitectura
-El proyecto consiste en 4 componentes principales:
-1. **Frontend (Flutter):** Aplicación móvil multiplataforma.
-2. **Backend (Go + Gin):** API RESTful principal para manejar usuarios, contenido, y autenticación OIDC.
-3. **Tracking Service (Python/FastAPI):** Microservicio para capturar métricas de uso y engagement en tiempo real.
-4. **Recommendation Service (Python/FastAPI):** Motor de recomendación híbrido que usa IA (LightGBM) y caché dinámica.
+<div align="center">
+  <img src="assets/images/01.png" alt="UTBGO Logo" width="200" />
+  <h1>🚀 UTBGO</h1>
+  <p><strong>Plataforma Universitaria de Aprendizaje en formato Micro-Learning</strong></p>
 
-## Tecnologías
-- **App:** Flutter, Dart, Firebase Auth
-- **Backend APIs:** Golang (Main), Python (Microservicios)
-- **Base de Datos:** PostgreSQL (Neon)
-- **Caché & Colas:** Redis (Upstash Cloud)
-- **Almacenamiento:** Cloudinary
+  [![Flutter](https://img.shields.io/badge/Flutter-02569B?style=for-the-badge&logo=flutter&logoColor=white)](https://flutter.dev/)
+  [![Go](https://img.shields.io/badge/Go-00ADD8?style=for-the-badge&logo=go&logoColor=white)](https://golang.org/)
+  [![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
+  [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-316192?style=for-the-badge&logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+  [![Redis](https://img.shields.io/badge/Redis-DC382D?style=for-the-badge&logo=redis&logoColor=white)](https://redis.io/)
+  [![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://www.docker.com/)
+</div>
 
-## Estructura del Código
+---
 
+## 📖 Sobre el Proyecto
+
+**UTBGO** es una aplicación móvil multiplataforma diseñada para transformar la manera en que los estudiantes consumen y comparten conocimiento. A través de un formato de videos cortos interactivos (estilo TikTok/Reels), UTBGO combina el entretenimiento con el aprendizaje académico.
+
+La plataforma cuenta con un potente ecosistema de microservicios que incluye recomendaciones personalizadas basadas en Inteligencia Artificial y transcodificación de video de alto rendimiento.
+
+## 🏗️ Arquitectura del Sistema
+
+El proyecto está diseñado bajo una arquitectura de microservicios moderna y escalable, dividida en 5 componentes principales:
+
+1. 📱 **Frontend (Flutter):** Aplicación móvil nativa fluida con soporte para iOS y Android. Incluye también un panel de administración integrado.
+2. ⚡ **API Gateway & Core (Golang):** El corazón del backend. Escrito en Go para máxima concurrencia y velocidad. Maneja la autenticación OIDC, el CRUD de contenidos y la moderación de comentarios.
+3. 📊 **Tracking Service (Python/FastAPI):** Microservicio dedicado a la ingesta masiva de interacciones de los usuarios (vistas, likes, tiempo de visualización) en tiempo real.
+4. 🧠 **Recommendation Engine (Python):** Motor de Inteligencia Artificial (LightGBM) que analiza el comportamiento del usuario para generar feeds de contenido altamente personalizados.
+5. 🎬 **Video Processing Worker (Python/FFmpeg):** Servicio encargado de tomar los videos subidos, comprimirlos y convertirlos a formato HLS para garantizar un streaming fluido en cualquier ancho de banda.
+
+<div align="center">
+  <img src="./assets/images/DiagramaAPP.png" alt="Diagrama de Arquitectura UTBGO" />
+</div>
+
+## 🛠️ Stack Tecnológico
+
+| Categoría | Tecnologías |
+| :--- | :--- |
+| **Mobile App** | Flutter, Dart, Firebase Auth |
+| **Backend Core** | Golang, Gin Framework |
+| **Microservicios** | Python, FastAPI, LightGBM, FFmpeg |
+| **Bases de Datos** | PostgreSQL (Neon), Redis (Upstash Cloud) |
+| **Almacenamiento** | Cloudinary (Media CDN) |
+| **Infraestructura**| Docker, Docker Compose |
+
+## 📂 Estructura del Repositorio
+
+```text
+📦 UTBGO
+ ┣ 📂 api-service/             # API Principal Orquestadora (Go)
+ ┣ 📂 tracking-service/        # Microservicio de Analíticas (Python)
+ ┣ 📂 recommendations-service/ # Motor de IA y Recomendaciones (Python)
+ ┣ 📂 video-worker-service/    # Transcodificación de Video HLS (Python)
+ ┣ 📂 lib/                     # Código fuente de la App Móvil (Flutter)
+ ┗ 📜 docker-compose.yml       # Orquestación de infraestructura local
 ```
-📁 api-service/            # API Principal en Go
-📁 tracking-service/        # Analíticas y Métricas (Python)
-📁 recommendations-service/ # Motor de Recomendación ML (Python)
-📁 lib/                    # Frontend Flutter
-```
 
-## Guía de Inicio Rápido
+---
 
-Para poner en marcha todo el ecosistema de UTBGO en unos minutos, sigue estos pasos:
+## 🚀 Guía de Inicio Rápido
 
-### 1. Configuración del Entorno
-El proyecto utiliza servicios Cloud (Neon, Upstash, Cloudinary). Debes configurar tus llaves:
-1. Copia el archivo de ejemplo: `cp .env.example .env`
-2. Edita `.env` y coloca tus credenciales reales.
+Para poner en marcha todo el ecosistema de UTBGO en tu entorno local en pocos minutos, sigue estos pasos:
 
-### 2. Levantar el Backend (Ecosistema Microservicios)
-Utilizamos Docker para que no tengas que instalar Go ni Python localmente:
+### 1. Variables de Entorno
+El proyecto utiliza servicios Cloud modernos. Debes configurar tus llaves:
+1. Copia el archivo de plantilla: `cp .env.example .env`
+2. Abre el archivo `.env` y coloca tus credenciales reales (Neon, Upstash, Cloudinary, Firebase).
+
+### 2. Levantar el Ecosistema Backend
+Utilizamos **Docker Compose** para orquestar la API en Go y todos los microservicios en Python sin necesidad de que instales nada localmente:
+
 ```bash
 docker-compose up -d --build
 ```
-*Esto encenderá la API de Go (8080), el Tracking (8091) y el Motor de Recomendaciones (8090).*
+> **Nota:** Esto levantará la API de Go (puerto 8080), el Tracking Service (8091), el Recommendation Service (8090) y el Worker de Video en segundo plano.
 
-### 3. Levantar el Frontend (Flutter)
-1. Abre un emulador de Android o iOS.
-2. Desde la raíz del proyecto, ejecuta:
+### 3. Ejecutar la Aplicación (Flutter)
+1. Abre tu emulador preferido (Android o iOS) o conecta un dispositivo físico.
+2. Desde la raíz del proyecto, instala las dependencias y ejecuta la app:
+
 ```bash
 flutter pub get
 flutter run
@@ -47,24 +86,10 @@ flutter run
 
 ---
 
-## Arquitectura del Sistema
-El sistema está diseñado bajo una arquitectura de microservicios moderna:
-- **API Principal (Go):** Orquestador de peticiones, autenticación y lógica de negocio.
-- **Tracking Service (Python):** Ingesta masiva de eventos (vistas, likes).
-- **ML Recommendations (Python):** Generación de feeds personalizados.
-- **Infraestructura Cloud:** Neon (PostgreSQL), Upstash (Redis), Cloudinary (Media).
+## 🛡️ Seguridad y Moderación
 
----
-
-## Mantenimiento Futuro
-Para el mantenimiento visual y modernización de código en futuras versiones de Flutter 
-1. Ejecutar en consola dentro de la carpeta raíz de Flutter:
-```bash
-dart fix --apply
-```
-6. **Refactorización de Nomenclatura (Technical Debt):**
-   - El backend en Go utiliza actualmente el término "Video" para referirse a todos los ítems de contenido. Se cambiara internamente (`Video` -> `Content`, `VideoRepository` -> `ContentRepository`) para reflejar mejor la naturaleza agnóstica de la plataforma. Se deben mantener los tags JSON actuales para asegurar la compatibilidad con el frontend de Flutter.
-
----
-
+UTBGO incluye herramientas avanzadas para la convivencia digital:
+- **Autenticación Segura:** Manejo de sesiones con JWT y validación externa vía Firebase (Google SignIn).
+- **Panel Administrativo:** Interfaz secreta dentro de la app para moderadores.
+- **Reporte y Moderación:** Sistema de denuncias con borrado en cascada protegido en base de datos e invalidación instantánea de caché.
 

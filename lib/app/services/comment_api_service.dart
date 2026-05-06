@@ -22,4 +22,23 @@ class CommentApiService {
       requiresAuth: true,
     );
   }
+
+  /// Elimina un comentario propio
+  Future<ApiResponse<dynamic>> deleteComment(String commentId) async {
+    return await _apiClient.delete(
+      '${AppConfig.apiBaseUrl}/v1/comments/$commentId',
+      requiresAuth: true,
+    );
+  }
+
+  /// Reporta el comentario de otra persona
+  Future<ApiResponse<dynamic>> reportComment(String commentId, String motivo) async {
+    return await _apiClient.post(
+      '${AppConfig.apiBaseUrl}/v1/comments/$commentId/report',
+      body: {
+        'motivo': motivo,
+      },
+      requiresAuth: true,
+    );
+  }
 }

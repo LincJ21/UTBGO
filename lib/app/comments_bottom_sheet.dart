@@ -164,6 +164,123 @@ class _CommentsSheetState extends State<_CommentsSheet> {
     });
   }
 
+  /// Opciones de moderación al mantener presionado
+  void _showCommentOptions(CommentModel comment) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(15)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (comment.isAuthor)
+                ListTile(
+                  leading: const Icon(Icons.delete, color: Colors.red),
+                  title: const Text('Eliminar comentario', style: TextStyle(color: Colors.red)),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _deleteComment(comment);
+                  },
+                )
+              else
+                ListTile(
+                  leading: const Icon(Icons.flag, color: Colors.orange),
+                  title: const Text('Reportar comentario'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _showReportDialog(comment);
+                  },
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _deleteComment(CommentModel comment) async {
+    // Confirmación simple
+    bool? confirm = await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Eliminar comentario'),
+        content: const Text('¿Estás seguro de que quieres eliminar tu comentario? Esta acción no se puede deshacer.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Eliminar', style: TextStyle(color: Colors.red))),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    final response = await _commentService.deleteComment(comment.id);
+    if (response.isSuccess) {
+      setState(() {
+        _comments.removeWhere((c) => c.id == comment.id);
+        _totalComments = _comments.length;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Comentario eliminado')));
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(response.error?.message ?? 'Error al eliminar')));
+    }
+  }
+
+  void _showReportDialog(CommentModel comment) {
+    String selectedMotivo = 'Spam o contenido engañoso';
+    final motivos = [
+      'Spam o contenido engañoso',
+      'Lenguaje ofensivo o acoso',
+      'Desinformación',
+      'Contenido inapropiado',
+    ];
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Reportar comentario'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: motivos.map((motivo) {
+                  return RadioListTile<String>(
+                    title: Text(motivo, style: const TextStyle(fontSize: 14)),
+                    value: motivo,
+                    groupValue: selectedMotivo,
+                    contentPadding: EdgeInsets.zero,
+                    onChanged: (value) {
+                      setDialogState(() => selectedMotivo = value!);
+                    },
+                  );
+                }).toList(),
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
+                TextButton(
+                  onPressed: () async {
+                    Navigator.pop(context);
+                    final resp = await _commentService.reportComment(comment.id, selectedMotivo);
+                    if (resp.isSuccess) {
+                      ScaffoldMessenger.of(this.context).showSnackBar(const SnackBar(content: Text('Reporte enviado al administrador')));
+                    } else {
+                      ScaffoldMessenger.of(this.context).showSnackBar(const SnackBar(content: Text('Error al reportar')));
+                    }
+                  },
+                  child: const Text('Reportar', style: TextStyle(color: Colors.red)),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   /// Prepara el campo de texto para responder a un comentario específico.
   void _replyTo(CommentModel comment) {
     _inputFocusNode.requestFocus();
@@ -306,38 +423,41 @@ class _CommentsSheetState extends State<_CommentsSheet> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Avatar
-              CircleAvatar(
-                radius: avatarRadius,
-                backgroundColor: Colors.grey[300],
-                child: Icon(Icons.person,
-                    size: avatarRadius + 2, color: Colors.grey[600]),
-              ),
-              const SizedBox(width: 12),
-              // Contenido del comentario
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildUserNameRow(comment),
-                    const SizedBox(height: 4),
-                    Text(
-                      comment.content,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        color: Colors.black87,
-                        height: 1.35,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    _buildActionsRow(comment),
-                  ],
+          GestureDetector(
+            onLongPress: () => _showCommentOptions(comment),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Avatar
+                CircleAvatar(
+                  radius: avatarRadius,
+                  backgroundColor: Colors.grey[300],
+                  child: Icon(Icons.person,
+                      size: avatarRadius + 2, color: Colors.grey[600]),
                 ),
-              ),
-            ],
+                const SizedBox(width: 12),
+                // Contenido del comentario
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildUserNameRow(comment),
+                      const SizedBox(height: 4),
+                      Text(
+                        comment.content,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          color: Colors.black87,
+                          height: 1.35,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      _buildActionsRow(comment),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
           // Sub-respuestas
           ...comment.replies.map(

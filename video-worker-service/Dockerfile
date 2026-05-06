@@ -12,5 +12,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+# Security: Run as non-root user
+RUN useradd --create-home --shell /bin/bash worker
+USER worker
+
 # Run the RQ worker
 CMD ["python", "worker.py"]

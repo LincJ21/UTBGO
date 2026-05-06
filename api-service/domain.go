@@ -92,7 +92,9 @@ type Video struct {
 	AuthorID     int       `json:"author_id"`
 	AuthorName   string    `json:"author_name,omitempty"`
 	VideoURL     string    `json:"video_url"`
+	HlsURL       string    `json:"hls_url,omitempty"`
 	ThumbnailURL string    `json:"thumbnail_url"`
+	Status       string    `json:"status"`           // processing, ready, failed
 	Duration     int       `json:"duration_seconds,omitempty"`
 	Size         int64     `json:"size_bytes,omitempty"`
 	Likes        int       `json:"likes"`
@@ -209,6 +211,18 @@ type AdminComment struct {
 	VideoTitle string    `json:"video_title"`
 	StatusCode string    `json:"status_code"`
 	CreatedAt  time.Time `json:"created_at"`
+}
+
+// ReportAdminDTO representa la denuncia para el panel del admin.
+type ReportAdminDTO struct {
+	ReportID       int       `json:"report_id"`
+	CommentID      int       `json:"comment_id"`
+	Motivo         string    `json:"motivo"`
+	Estado         string    `json:"estado"`
+	FechaCreacion  time.Time `json:"fecha_creacion"`
+	CommentText    string    `json:"comment_text"`
+	AuthorName     string    `json:"author_name"`
+	ReporterName   string    `json:"reporter_name"`
 }
 
 // AdminStats representa las estadísticas globales del dashboard de administración.
@@ -373,6 +387,9 @@ type CommentRepository interface {
 	// Delete elimina un comentario (solo el autor o admin).
 	Delete(ctx context.Context, commentID, userID int) error
 
+	// Report crea un reporte de un comentario por parte de un usuario.
+	Report(ctx context.Context, commentID, userID int, motivo string) error
+
 	// CountByVideoID cuenta comentarios de un video.
 	CountByVideoID(ctx context.Context, videoID int) (int, error)
 }
@@ -412,6 +429,12 @@ type AdminRepository interface {
 
 	// DeleteComment elimina un comentario por un administrador (sin verificar autoría).
 	DeleteComment(ctx context.Context, commentID int) error
+
+	// GetPendingReports obtiene los reportes pendientes de moderación.
+	GetPendingReports(ctx context.Context, page, pageSize int) ([]ReportAdminDTO, int, error)
+
+	// ResolveReport marca un reporte como ignorado o borra el comentario. Retorna el ID del video asociado.
+	ResolveReport(ctx context.Context, reportID int, action string) (int, error)
 
 	// --- Estadísticas ---
 
