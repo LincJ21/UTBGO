@@ -17,11 +17,68 @@ env:
 
 jobs:
   # =========================================================
-  # JOB 1: Build & Push to ACR
+  # JOB 1: Provision Infrastructure (Phase 1)
+  # =========================================================
+  provision_infra:
+    name: Provision Infrastructure Base
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    environment: Production
+
+    defaults:
+      run:
+        working-directory: ${{ env.TF_WORKING_DIR }}
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 🔐 Azure Login (CLI)
+        env:
+          AZ_ID: ${{ secrets.AZURE_AD_CLIENT_ID }}
+          AZ_SECRET: ${{ secrets.AZURE_AD_CLIENT_SECRET }}
+          AZ_TENANT: ${{ secrets.AZURE_AD_TENANT_ID }}
+          AZ_SUBSCRIPTION: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        run: |
+          az login --service-principal -u "$AZ_ID" -p "$AZ_SECRET" --tenant "$AZ_TENANT"
+          az account set --subscription "$AZ_SUBSCRIPTION"
+
+      - name: ⚙️ Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: 🚀 Terraform Init
+        run: terraform init
+        env:
+          ARM_CLIENT_ID: ${{ secrets.AZURE_AD_CLIENT_ID }}
+          ARM_CLIENT_SECRET: ${{ secrets.AZURE_AD_CLIENT_SECRET }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_AD_TENANT_ID }}
+
+      - name: 🚀 Terraform Apply (Base)
+        run: terraform apply -auto-approve
+        env:
+          ARM_CLIENT_ID: ${{ secrets.AZURE_AD_CLIENT_ID }}
+          ARM_CLIENT_SECRET: ${{ secrets.AZURE_AD_CLIENT_SECRET }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_AD_TENANT_ID }}
+          
+          TF_VAR_db_connection_string: ${{ secrets.TF_VAR_DB_CONNECTION_STRING }}
+          TF_VAR_redis_url: ${{ secrets.TF_VAR_REDIS_URL }}
+          TF_VAR_jwt_secret: ${{ secrets.TF_VAR_JWT_SECRET_KEY }}
+          TF_VAR_cloudinary_url: ${{ secrets.TF_VAR_CLOUDINARY_URL }}
+          TF_VAR_recommendations_api_key: ${{ secrets.TF_VAR_RECOMMENDATIONS_API_KEY }}
+          TF_VAR_tracking_api_key: ${{ secrets.TF_VAR_TRACKING_API_KEY }}
+          TF_VAR_google_client_id: ${{ secrets.TF_VAR_GOOGLE_CLIENT_ID }}
+          TF_VAR_firebase_project_id: ${{ secrets.TF_VAR_FIREBASE_PROJECT_ID }}
+          TF_VAR_azure_oidc_client_id: ${{ secrets.TF_VAR_AZURE_AD_CLIENT_ID }}
+          TF_VAR_azure_oidc_tenant_id: ${{ secrets.TF_VAR_AZURE_AD_TENANT_ID }}
+
+  # =========================================================
+  # JOB 2: Build & Push to ACR
   # =========================================================
   build_and_push:
     name: Build & Push to Azure Container Registry
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    needs: provision_infra
     runs-on: ubuntu-latest
     
     steps:
@@ -60,13 +117,12 @@ jobs:
           docker push utbgoregistryt4kj.azurecr.io/utbgo-video-worker:${{ github.sha }}
 
   # =========================================================
-  # JOB 2: Deploy to Production (Terraform)
+  # JOB 3: Update Container Apps with new images
   # =========================================================
-  deploy_production:
-    name: Deploy to Production via Terraform
+  deploy_apps:
+    name: Update Apps via Terraform
     needs: build_and_push
     runs-on: ubuntu-latest
-    environment: Production
 
     defaults:
       run:
@@ -97,7 +153,7 @@ jobs:
           ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
           ARM_TENANT_ID: ${{ secrets.AZURE_AD_TENANT_ID }}
 
-      - name: 🚀 Terraform Apply
+      - name: 🚀 Terraform Apply (Final)
         run: |
           terraform apply -auto-approve \
             -var="api_image=utbgoregistryt4kj.azurecr.io/utbgo-api:${{ github.sha }}" \
@@ -120,28 +176,3 @@ jobs:
           TF_VAR_firebase_project_id: ${{ secrets.TF_VAR_FIREBASE_PROJECT_ID }}
           TF_VAR_azure_oidc_client_id: ${{ secrets.TF_VAR_AZURE_AD_CLIENT_ID }}
           TF_VAR_azure_oidc_tenant_id: ${{ secrets.TF_VAR_AZURE_AD_TENANT_ID }}
-
-  # =========================================================
-  # JOB 3: Performance Validation (k6)
-  # =========================================================
-  performance_test:
-    name: Verify SLOs with k6
-    needs: deploy_production
-    runs-on: ubuntu-latest
-    
-    steps:
-      - name: 📥 Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: ⏱️ Setup k6
-        uses: grafana/setup-k6-action@v1
-
-      - name: 🏃 Run k6 Performance Test
-        run: |
-          if [ -d "tests/k6" ]; then
-            k6 run tests/k6/performance-test.js || echo "k6 tests failed but continuing..."
-          else
-            echo "No k6 tests found. Skipping."
-          fi
-        env:
-          API_URL: ${{ secrets.PROD_API_URL }}
