@@ -9,7 +9,6 @@ on:
       - main
 
 permissions:
-  id-token: write
   contents: read
   pull-requests: write
 
@@ -29,13 +28,10 @@ jobs:
       - name: 📥 Checkout Repository
         uses: actions/checkout@v4
 
-      - name: 🔐 Azure Login
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZURE_AD_CLIENT_ID }}
-          client-secret: ${{ secrets.AZURE_AD_CLIENT_SECRET }}
-          tenant-id: ${{ secrets.AZURE_AD_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: 🔐 Azure Login (CLI)
+        run: |
+          az login --service-principal -u ${{ secrets.AZURE_AD_CLIENT_ID }} -p "${{ secrets.AZURE_AD_CLIENT_SECRET }}" --tenant ${{ secrets.AZURE_AD_TENANT_ID }}
+          az account set --subscription ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: 🐳 Login to Azure Container Registry
         run: az acr login --name ${{ secrets.ACR_NAME }}
@@ -75,13 +71,10 @@ jobs:
       - name: 📥 Checkout Repository
         uses: actions/checkout@v4
 
-      - name: 🔐 Azure Login
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZURE_AD_CLIENT_ID }}
-          client-secret: ${{ secrets.AZURE_AD_CLIENT_SECRET }}
-          tenant-id: ${{ secrets.AZURE_AD_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: 🔐 Azure Login (CLI)
+        run: |
+          az login --service-principal -u ${{ secrets.AZURE_AD_CLIENT_ID }} -p "${{ secrets.AZURE_AD_CLIENT_SECRET }}" --tenant ${{ secrets.AZURE_AD_TENANT_ID }}
+          az account set --subscription ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: ⚙️ Setup Terraform
         uses: hashicorp/setup-terraform@v3
