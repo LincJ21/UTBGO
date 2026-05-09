@@ -1,0 +1,17 @@
+# Ignorar carpetas de Flutter/Dart
+build/
+.dart_tool/
+.pub-cache/
+.packages
+
+# Ignorar Git
+.git
+.gitignore
+
+# Ignorar archivos locales pesados
+node_modules/
+dist/
+
+# Ignorar archivos de sistema
+.DS_Store
+Thumbs.db

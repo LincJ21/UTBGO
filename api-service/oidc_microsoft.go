@@ -54,15 +54,31 @@ func NewMicrosoftOIDCProvider(ctx context.Context) (*MicrosoftOIDCProvider, erro
 	// Construir el issuer URL con el tenant específico
 	issuerURL := fmt.Sprintf(microsoftIssuerTemplate, tenantID)
 
+	// Para apps multi-tenant (tenant = "common"), Microsoft devuelve un issuer
+	// dinámico con placeholder "{tenantid}" en el documento de descubrimiento OIDC.
+	// La librería go-oidc rechaza esto por defecto porque no coincide con la URL
+	// de descubrimiento. Usamos InsecureIssuerURLContext para saltar esa validación
+	// durante el descubrimiento (la firma JWKS sigue siendo verificada normalmente).
+	discoveryCtx := ctx
+	isMultiTenant := tenantID == "common" || tenantID == "organizations" || tenantID == "consumers"
+	if isMultiTenant {
+		discoveryCtx = oidc.InsecureIssuerURLContext(ctx, issuerURL)
+		Logger.Info("Microsoft OIDC: modo multi-tenant activado (skip issuer check)")
+	}
+
 	// Descubrir la configuración OIDC de Microsoft y descargar JWKS
-	provider, err := oidc.NewProvider(ctx, issuerURL)
+	provider, err := oidc.NewProvider(discoveryCtx, issuerURL)
 	if err != nil {
 		return nil, fmt.Errorf("error al descubrir OIDC de Microsoft Entra ID: %w", err)
 	}
 
-	// Configurar el verificador con la audiencia esperada
+	// Configurar el verificador con la audiencia esperada.
+	// En modo multi-tenant, el issuer del token será el tenant real del usuario
+	// (ej: https://login.microsoftonline.com/TENANT-ID-REAL/v2.0), no "common",
+	// por lo que necesitamos saltar la validación del issuer en el token también.
 	verifier := provider.Verifier(&oidc.Config{
-		ClientID: clientID,
+		ClientID:        clientID,
+		SkipIssuerCheck: isMultiTenant,
 	})
 
 	Logger.Info("Microsoft Entra ID OIDC Provider inicializado",

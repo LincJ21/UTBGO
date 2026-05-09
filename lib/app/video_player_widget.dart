@@ -38,6 +38,16 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
   bool _isSearching = false;
   bool _showControls = true;
   bool _viewTracked = false; // Evita reportar la misma vista múltiples veces por rebuild
+  String _userRole = ''; // Rol del usuario para ocultar funciones restringidas
+
+  /// Carga el rol del usuario desde SharedPreferences para decidir qué UI mostrar.
+  Future<void> _loadUserRole() async {
+    final prefs = await SharedPreferences.getInstance();
+    final role = prefs.getString('role') ?? '';
+    if (mounted && role != _userRole) {
+      setState(() => _userRole = role);
+    }
+  }
 
   /// Reporta al backend que el usuario reprodujo este video (fire-and-forget).
   /// Usa http.post directo en vez de ApiClient para evitar que errores de
@@ -99,21 +109,6 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
   }
 
   Future<void> _toggleRepost() async {
-    final prefs = await SharedPreferences.getInstance();
-    final role = prefs.getString('role') ?? '';
-    
-    if (role == 'aspirante') {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Los aspirantes no pueden repostear contenido. ¡Inscríbete para disfrutar de todas las funciones!'),
-            backgroundColor: Colors.orange,
-          ),
-        );
-      }
-      return;
-    }
-
     final wasReposted = widget.video.isReposted;
     setState(() => widget.video.isReposted = !widget.video.isReposted);
 
@@ -124,8 +119,17 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
 
     if (!response.isSuccess && mounted) {
       setState(() => widget.video.isReposted = wasReposted);
+
+      // Mostrar el mensaje del backend (ej: "Los aspirantes no pueden repostear contenido")
+      String errorMsg = 'Error al procesar repost';
+      if (response.data != null && response.data is Map) {
+        errorMsg = (response.data as Map)['error'] ?? errorMsg;
+      }
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Error al procesar repost')),
+        SnackBar(
+          content: Text(errorMsg),
+          backgroundColor: Colors.orange,
+        ),
       );
     }
   }
@@ -153,6 +157,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
   @override
   void initState() {
     super.initState();
+    _loadUserRole();
     _isImage = widget.video.contentType == 'imagen';
     if (!_isImage) {
       // Usar HLS si está disponible y listo, sino usar MP4 como fallback de contingencia
@@ -293,13 +298,16 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
                               text: '',
                               onTap: _toggleBookmark,
                             ),
-                            const SizedBox(height: 16),
-                            _actionButton(
-                              icon: Icons.repeat,
-                              color: widget.video.isReposted ? Colors.green : Colors.white,
-                              text: '',
-                              onTap: _toggleRepost,
-                            ),
+                            // Ocultar repost para aspirantes (no tienen permiso) o si aún no carga el rol
+                            if (_userRole != 'aspirante' && _userRole.isNotEmpty) ...[
+                              const SizedBox(height: 16),
+                              _actionButton(
+                                icon: Icons.repeat,
+                                color: widget.video.isReposted ? Colors.green : Colors.white,
+                                text: '',
+                                onTap: _toggleRepost,
+                              ),
+                            ],
                             const SizedBox(height: 16),
                             _actionButton(
                               icon: Icons.share,

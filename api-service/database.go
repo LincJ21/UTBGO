@@ -38,4 +38,30 @@ func InitDB(connStr string) {
 
 	Logger.Info("Conexión a la base de datos establecida",
 		"max_open", 25, "max_idle", 10, "max_lifetime", "5m", "max_idle_time", "3m")
+
+	// Asegurar configuración de la app
+	ensureAppConfigTable()
+}
+
+func ensureAppConfigTable() {
+	_, err := DB.Exec(`
+		CREATE TABLE IF NOT EXISTS app_config (
+			key VARCHAR(50) PRIMARY KEY,
+			value VARCHAR(255) NOT NULL,
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		);
+	`)
+	if err != nil {
+		Logger.Warn("Error creando tabla app_config", "error", err)
+		return
+	}
+
+	_, err = DB.Exec(`
+		INSERT INTO app_config (key, value) 
+		VALUES ('manual_login_enabled', 'false') 
+		ON CONFLICT (key) DO NOTHING;
+	`)
+	if err != nil {
+		Logger.Warn("Error inicializando config manual_login_enabled", "error", err)
+	}
 }

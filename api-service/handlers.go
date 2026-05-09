@@ -26,26 +26,13 @@ func getOrCreateUser(ctx context.Context, email, name, picture string) (int, err
 	var userID int
 
 	// Intenta encontrar al usuario existente.
-	var currentRoleID int
-	err := DB.QueryRowContext(ctx, "SELECT id_usuario, id_tipo_usuario FROM usuarios WHERE email = $1", email).Scan(&userID, &currentRoleID)
+	err := DB.QueryRowContext(ctx, "SELECT id_usuario FROM usuarios WHERE email = $1", email).Scan(&userID)
 	if err == nil {
 		Logger.Info("Usuario existente encontrado", "email", email)
 
-		// Verificar si el rol debe actualizarse (ej: cambió el .env)
-		roleCode := "estudiante"
-		if GlobalRoleMapper == nil {
-			Logger.Warn("GlobalRoleMapper is NIL in getOrCreateUser")
-		} else {
-			roleCode = GlobalRoleMapper.MapRole(email, "google")
-			Logger.Info("Mapa de rol para usuario existente", "email", email, "role_code", roleCode)
-		}
-
-		var targetRoleID int
-		err = DB.QueryRowContext(ctx, "SELECT id_tipo_usuario FROM tipos_usuario WHERE codigo = $1", roleCode).Scan(&targetRoleID)
-		if err == nil && targetRoleID != currentRoleID {
-			Logger.Info("Actualizando rol de usuario existente", "email", email, "old_role_id", currentRoleID, "new_role_id", targetRoleID)
-			_, _ = DB.ExecContext(ctx, "UPDATE usuarios SET id_tipo_usuario = $1 WHERE id_usuario = $2", targetRoleID, userID)
-		}
+		// NO re-mapear el rol de usuarios existentes.
+		// Si un admin cambió el rol manualmente, ese cambio se debe respetar.
+		// El RoleMapper solo asigna rol al momento de la CREACIÓN.
 
 		// Invalidar caché SIEMPRE al iniciar sesión para asegurar datos frescos
 		if Cache != nil {
@@ -1009,6 +996,23 @@ func handleCreateComment(c *gin.Context) {
 		"id":      strconv.Itoa(commentID),
 		"message": "Comentario creado exitosamente",
 	})
+}
+
+// handleGetLoginConfig devuelve el estado de la configuración manual_login_enabled
+func handleGetLoginConfig(c *gin.Context) {
+	var value string
+	err := DB.QueryRow("SELECT value FROM app_config WHERE key = 'manual_login_enabled'").Scan(&value)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			c.JSON(http.StatusOK, gin.H{"manualLoginEnabled": false})
+			return
+		}
+		Logger.Error("Error obteniendo configuracion de login", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
+		return
+	}
+	isEnabled := (value == "true")
+	c.JSON(http.StatusOK, gin.H{"manualLoginEnabled": isEnabled})
 }
 
 func handleSearchVideos(c *gin.Context) {

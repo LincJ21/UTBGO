@@ -14,7 +14,7 @@ permissions:
   pull-requests: write
 
 env:
-  TF_WORKING_DIR: './azure/terraform'
+  TF_WORKING_DIR: './azure/terraform/container-apps'
 
 jobs:
   # =========================================================
@@ -42,7 +42,7 @@ jobs:
       - name: 🔨 Build and Push Images
         run: |
           # API Go
-          docker build -f api-service/Dockerfile -t ${{ secrets.ACR_NAME }}.azurecr.io/utbgo-api:${{ github.sha }} ./api-service
+          docker build -f ./Dockerfile -t ${{ secrets.ACR_NAME }}.azurecr.io/utbgo-api:${{ github.sha }} .
           docker push ${{ secrets.ACR_NAME }}.azurecr.io/utbgo-api:${{ github.sha }}
           
           # Tracking Python
@@ -115,6 +115,8 @@ jobs:
           TF_VAR_tracking_api_key: ${{ secrets.TRACKING_API_KEY }}
           TF_VAR_google_client_id: ${{ secrets.GOOGLE_CLIENT_ID }}
           TF_VAR_firebase_project_id: ${{ secrets.FIREBASE_PROJECT_ID }}
+          TF_VAR_azure_oidc_client_id: ${{ secrets.AZURE_OIDC_CLIENT_ID }}
+          TF_VAR_azure_oidc_tenant_id: ${{ secrets.AZURE_OIDC_TENANT_ID }}
 
   # =========================================================
   # JOB 3: Performance Validation (k6)

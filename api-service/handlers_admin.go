@@ -222,19 +222,21 @@ func handleAdminUpdateUserRole(c *gin.Context) {
 		Role string `json:"role" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Campo 'role' requerido (estudiante, moderador, admin)"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Campo 'role' requerido (estudiante, profesor, moderador, admin)"})
 		return
 	}
 
 	validRoles := map[string]bool{
+		"aspirante":  true,
 		"estudiante": true,
+		"profesor":   true,
 		"moderador":  true,
 		"admin":      true,
 	}
 	if !validRoles[body.Role] {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":       "Rol inválido",
-			"valid_roles": []string{"estudiante", "moderador", "admin"},
+			"valid_roles": []string{"aspirante", "estudiante", "profesor", "moderador", "admin"},
 		})
 		return
 	}
@@ -527,6 +529,38 @@ func handleAdminDeleteComment(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "Comentario eliminado correctamente",
+	})
+}
+
+// handleUpdateLoginConfig actualiza la configuración de login manual
+func handleUpdateLoginConfig(c *gin.Context) {
+	var body struct {
+		Enabled bool `json:"manualLoginEnabled"`
+	}
+
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Formato JSON inválido"})
+		return
+	}
+
+	valueStr := "false"
+	if body.Enabled {
+		valueStr = "true"
+	}
+
+	_, err := DB.ExecContext(c.Request.Context(), 
+		"UPDATE app_config SET value = $1, updated_at = NOW() WHERE key = 'manual_login_enabled'", 
+		valueStr)
+	
+	if err != nil {
+		Logger.Error("Error actualizando configuracion login", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error interno al actualizar la configuración"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Configuración actualizada",
+		"manualLoginEnabled": body.Enabled,
 	})
 }
 

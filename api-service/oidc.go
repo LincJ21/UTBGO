@@ -193,26 +193,15 @@ func (ib *IdentityBroker) Authenticate(ctx context.Context, providerName, rawIDT
 	}, nil
 }
 
-// upsertUser crea un nuevo usuario o actualiza uno existente en la base de datos.
-// Usa getOrCreateUser existente y luego actualiza el rol si es necesario.
+// upsertUser crea un nuevo usuario o encuentra uno existente en la base de datos.
+// El rol solo se asigna al momento de la CREACIÓN del usuario (dentro de getOrCreateUser).
+// En logins posteriores, el rol existente se respeta para no sobreescribir
+// cambios hechos manualmente por un administrador.
 func (ib *IdentityBroker) upsertUser(ctx context.Context, claims *OIDCClaims, roleCode string) (int, error) {
-	// Usar la función existente para crear/buscar usuario
 	userID, err := getOrCreateUser(ctx, claims.Email, claims.Name, claims.Picture)
 	if err != nil {
 		return 0, fmt.Errorf("error en getOrCreateUser: %w", err)
 	}
-
-	// Actualizar el rol del usuario según el mapeo del Identity Broker
-	err = ib.updateUserRole(ctx, userID, roleCode)
-	if err != nil {
-		Logger.Warn("Identity Broker: no se pudo actualizar el rol",
-			"user_id", userID,
-			"role", roleCode,
-			"error", err,
-		)
-		// No es un error fatal: el usuario ya existe, simplemente no se actualizó el rol
-	}
-
 	return userID, nil
 }
 

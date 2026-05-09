@@ -79,17 +79,20 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
     }
   }
 
+  /// Consulta al backend el rol actual del usuario y lo guarda localmente.
+  /// Se ejecuta cada vez que la app arranca para garantizar que cambios
+  /// de rol hechos por un administrador se reflejen sin re-login.
   Future<void> _cacheUserRoleSilently() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      if (prefs.getString('role') != null && prefs.getString('role') != 'estudiante') return;
-      
       final apiClient = ApiClient();
       final res = await apiClient.get('${AppConfig.backendBaseUrl}/api/v1/profile/me', requiresAuth: true);
       if (res.isSuccess && res.data != null) {
         final data = res.data as Map<String, dynamic>;
-        if (data['user'] != null && data['user']['role'] != null) {
-          await prefs.setString('role', data['user']['role']);
+        // La respuesta de /profile/me devuelve el User directamente (no anidado)
+        final role = data['role'] as String?;
+        if (role != null && role.isNotEmpty) {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('role', role);
         }
       }
     } catch (_) {}

@@ -133,28 +133,47 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Widget _buildProfileView(BuildContext context, ProfileModel profile) {
     final isCreator = profile.role == 'profesor' || profile.role == 'admin';
+    final isAspirante = profile.role == 'aspirante';
 
-    final tabs = isCreator ? const [
-      Tab(text: 'STATS'),
-      Tab(text: 'PUBLICACIONES'),
-      Tab(icon: Icon(Icons.repeat)),
-      Tab(icon: Icon(Icons.bookmark_border)),
-    ] : const [
-      Tab(text: 'STATS'),
-      Tab(icon: Icon(Icons.repeat)),
-      Tab(icon: Icon(Icons.bookmark_border)),
-    ];
+    List<Widget> tabs = [];
+    List<Widget> tabViews = [];
 
-    final tabViews = isCreator ? [
-      _buildStatsTab(profile),
-      _buildPublicationsTab(profile),
-      _buildRepostsTab(profile),
-      _buildBookmarksTab(profile),
-    ] : [
-      _buildStatsTab(profile),
-      _buildRepostsTab(profile),
-      _buildBookmarksTab(profile),
-    ];
+    if (isCreator) {
+      tabs = const [
+        Tab(text: 'STATS'),
+        Tab(text: 'PUBLICACIONES'),
+        Tab(icon: Icon(Icons.repeat)),
+        Tab(icon: Icon(Icons.bookmark_border)),
+      ];
+      tabViews = [
+        _buildStatsTab(profile),
+        _buildPublicationsTab(profile),
+        _buildRepostsTab(profile),
+        _buildBookmarksTab(profile),
+      ];
+    } else if (isAspirante) {
+      // Los aspirantes NO tienen permiso de repostear, por lo tanto no se muestra esa pestaña
+      tabs = const [
+        Tab(text: 'STATS'),
+        Tab(icon: Icon(Icons.bookmark_border)),
+      ];
+      tabViews = [
+        _buildStatsTab(profile),
+        _buildBookmarksTab(profile),
+      ];
+    } else {
+      // Estudiante normal
+      tabs = const [
+        Tab(text: 'STATS'),
+        Tab(icon: Icon(Icons.repeat)),
+        Tab(icon: Icon(Icons.bookmark_border)),
+      ];
+      tabViews = [
+        _buildStatsTab(profile),
+        _buildRepostsTab(profile),
+        _buildBookmarksTab(profile),
+      ];
+    }
 
     return DefaultTabController(
       length: tabs.length,

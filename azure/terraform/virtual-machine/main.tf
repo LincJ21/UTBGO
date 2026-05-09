@@ -51,17 +51,17 @@ resource "azurerm_network_security_group" "nsg" {
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
 
-  security_rule {
-    name                       = "SSH"
-    priority                   = 1001
-    direction                  = "Inbound"
-    access                     = "Allow"
-    protocol                   = "Tcp"
-    source_port_range          = "*"
-    destination_port_range     = "22"
-    source_address_prefix      = "*"
-    destination_address_prefix = "*"
-  }
+    security_rule {
+      name                       = "SSH"
+      priority                   = 1001
+      direction                  = "Inbound"
+      access                     = "Allow"
+      protocol                   = "Tcp"
+      source_port_range          = "*"
+      destination_port_range     = "22"
+      source_address_prefix      = var.allowed_ssh_ip
+      destination_address_prefix = "*"
+    }
 
   security_rule {
     name                       = "HTTP"
@@ -152,5 +152,9 @@ resource "azurerm_linux_virtual_machine" "vm" {
     video_worker_api_key        = var.video_worker_api_key
     admin_emails                = var.admin_emails
     hls_queue_name              = "video_processing"
+    azure_oidc_client_id        = var.azure_oidc_client_id
+    azure_oidc_tenant_id        = var.azure_oidc_tenant_id
+    institutional_domain        = var.institutional_domain
+    admin_domain                = var.admin_domain
   }))
 }

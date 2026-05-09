@@ -42,6 +42,30 @@ variable "firebase_project_id" {
   default     = ""
 }
 
+variable "azure_oidc_client_id" {
+  description = "Azure App Registration Client ID for Microsoft OIDC login"
+  type        = string
+  default     = ""
+}
+
+variable "azure_oidc_tenant_id" {
+  description = "Azure Tenant ID for Microsoft OIDC login (use 'common' for multitenant)"
+  type        = string
+  default     = "common"
+}
+
+variable "institutional_domain" {
+  description = "Dominio institucional"
+  type        = string
+  default     = "utb.edu.co"
+}
+
+variable "admin_domain" {
+  description = "Dominio administrador"
+  type        = string
+  default     = "admin.utb.edu.co"
+}
+
 variable "google_client_id" {
   description = "Client ID de Google OAuth"
   type        = string
@@ -69,4 +93,10 @@ variable "video_worker_api_key" {
 variable "admin_emails" {
   description = "Lista de correos administradores separados por coma"
   type        = string
+}
+
+variable "allowed_ssh_ip" {
+  description = "Dirección IP (o CIDR) permitida para acceder por SSH. Ejemplo: '203.0.113.5' o '203.0.113.5/32'"
+  type        = string
+  default     = "*" # IMPORTANTE: Cambiar en producción por una IP específica
 }

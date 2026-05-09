@@ -495,8 +495,14 @@ func main() {
 			comments.POST("/:id/report", AuthMiddleware(), handleReportCommentV2)
 		}
 
-		// Tendencias
+		// --- Tendencias ---
 		v1.GET("/trends", handleGetTrends)
+
+		// --- Configuración (Pública) ---
+		config := v1.Group("/config")
+		{
+			config.GET("/login-status", handleGetLoginConfig)
+		}
 
 		// Recomendaciones
 		recommend := v1.Group("/recommend")
@@ -596,6 +602,12 @@ func main() {
 			{
 				adminReports.GET("", RequireModerator(), handleGetReports)
 				adminReports.PATCH("/:id/resolve", RequireModerator(), handleResolveReport)
+			}
+
+			// Gestión de Configuración (solo admin)
+			adminConfig := admin.Group("/config")
+			{
+				adminConfig.PUT("/login-status", RequireAdmin(), handleUpdateLoginConfig)
 			}
 		}
 

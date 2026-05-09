@@ -1,9 +1,12 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'admin_api_service.dart';
 import 'admin_models.dart';
 import 'config/app_config.dart';
 import 'package:http/http.dart' as http;
-import 'package:flutter_secure_storage/flutter_secure_storage.dart' as flutter_secure_storage;
+import 'package:flutter_secure_storage/flutter_secure_storage.dart'
+    as flutter_secure_storage;
+
 class AdminPanelScreen extends StatefulWidget {
   const AdminPanelScreen({super.key});
 
@@ -22,7 +25,9 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
       length: 4,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Panel de Administración', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          title: const Text('Panel de Administración',
+              style:
+                  TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
           backgroundColor: _utbBaseBlue,
           iconTheme: const IconThemeData(color: Colors.white),
           bottom: const TabBar(
@@ -68,11 +73,54 @@ class _DashboardTabState extends State<_DashboardTab> {
   AdminStats? _stats;
   bool _isLoading = true;
   String? _error;
+  bool _manualLoginEnabled = false;
 
   @override
   void initState() {
     super.initState();
     _loadStats();
+    _loadLoginConfig();
+  }
+
+  Future<void> _loadLoginConfig() async {
+    try {
+      final response = await http.get(
+          Uri.parse('${AppConfig.backendBaseUrl}/api/v1/config/login-status'));
+      if (response.statusCode == 200) {
+        final body = json.decode(response.body);
+        if (mounted)
+          setState(
+              () => _manualLoginEnabled = body['manualLoginEnabled'] ?? false);
+      }
+    } catch (e) {
+      debugPrint('Error loading login config: $e');
+    }
+  }
+
+  Future<void> _updateLoginConfig(bool value) async {
+    setState(() => _manualLoginEnabled = value);
+    try {
+      final storage = const flutter_secure_storage.FlutterSecureStorage();
+      final token = await storage.read(key: 'jwt_token');
+
+      final response = await http.put(
+        Uri.parse(
+            '${AppConfig.backendBaseUrl}/api/v1/admin/config/login-status'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: json.encode({'manualLoginEnabled': value}),
+      );
+
+      if (response.statusCode != 200 && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Error al actualizar configuración')));
+        _loadLoginConfig(); // revertir si falla
+      }
+    } catch (e) {
+      if (mounted) _loadLoginConfig();
+    }
   }
 
   Future<void> _loadStats() async {
@@ -85,7 +133,9 @@ class _DashboardTabState extends State<_DashboardTab> {
     if (response.isSuccess && response.data != null) {
       if (mounted) setState(() => _stats = response.data);
     } else {
-      if (mounted) setState(() => _error = response.error?.message ?? 'Error cargando dashboard');
+      if (mounted)
+        setState(() =>
+            _error = response.error?.message ?? 'Error cargando dashboard');
     }
     if (mounted) setState(() => _isLoading = false);
   }
@@ -99,12 +149,14 @@ class _DashboardTabState extends State<_DashboardTab> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Text(_error!, style: const TextStyle(color: Colors.red)),
-            ElevatedButton(onPressed: _loadStats, child: const Text('Reintentar')),
+            ElevatedButton(
+                onPressed: _loadStats, child: const Text('Reintentar')),
           ],
         ),
       );
     }
-    if (_stats == null) return const Center(child: Text('No hay datos disponibles.'));
+    if (_stats == null)
+      return const Center(child: Text('No hay datos disponibles.'));
 
     return RefreshIndicator(
       onRefresh: _loadStats,
@@ -112,11 +164,13 @@ class _DashboardTabState extends State<_DashboardTab> {
         padding: const EdgeInsets.all(16),
         children: [
           // Sección de Inteligencia Artificial
-          const Text('Motor Predictivo', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const Text('Motor Predictivo',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
           Card(
             color: Colors.indigo.shade50,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Row(
@@ -127,13 +181,18 @@ class _DashboardTabState extends State<_DashboardTab> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Reentrenamiento LightGBM', style: TextStyle(fontWeight: FontWeight.bold)),
-                        Text('Generar nueva versión de recomendaciones.', style: TextStyle(fontSize: 12, color: Colors.black54)),
+                        Text('Reentrenamiento LightGBM',
+                            style: TextStyle(fontWeight: FontWeight.bold)),
+                        Text('Generar nueva versión de recomendaciones.',
+                            style:
+                                TextStyle(fontSize: 12, color: Colors.black54)),
                       ],
                     ),
                   ),
                   ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(backgroundColor: Colors.indigo, foregroundColor: Colors.white),
+                    style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.indigo,
+                        foregroundColor: Colors.white),
                     onPressed: _triggerRetraining,
                     icon: const Icon(Icons.sync),
                     label: const Text("Entrenar"),
@@ -144,8 +203,26 @@ class _DashboardTabState extends State<_DashboardTab> {
           ),
           const SizedBox(height: 24),
 
+          // Sección Configuración del Sistema
+          const Text('Configuración del Sistema',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          Card(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            child: SwitchListTile(
+              title: const Text('Habilitar Iniciar Sesión / Registro manual', style: TextStyle(fontWeight: FontWeight.bold)),
+              subtitle: const Text('Permite mostrar acceso por email/contraseña y registro en la pantalla inicial.', style: TextStyle(fontSize: 12)),
+              value: _manualLoginEnabled,
+              activeColor: Colors.indigo,
+              onChanged: _updateLoginConfig,
+              secondary: const Icon(Icons.security, color: Colors.indigo),
+            ),
+          ),
+          const SizedBox(height: 24),
+
           // Sección Usuarios
-          const Text('Usuarios', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const Text('Usuarios',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
           GridView.count(
             crossAxisCount: 2,
@@ -155,14 +232,19 @@ class _DashboardTabState extends State<_DashboardTab> {
             mainAxisSpacing: 8,
             crossAxisSpacing: 8,
             children: [
-              _buildStatCard('Total', _stats!.totalUsers.toString(), Icons.people_outline, Colors.blue),
-              _buildStatCard('Activos', _stats!.activeUsers.toString(), Icons.check_circle_outline, Colors.green),
-              _buildStatCard('Baneados', _stats!.bannedUsers.toString(), Icons.block, Colors.red),
-              _buildStatCard('Registros (7d)', _stats!.recentSignups.toString(), Icons.trending_up, Colors.orange),
+              _buildStatCard('Total', _stats!.totalUsers.toString(),
+                  Icons.people_outline, Colors.blue),
+              _buildStatCard('Activos', _stats!.activeUsers.toString(),
+                  Icons.check_circle_outline, Colors.green),
+              _buildStatCard('Baneados', _stats!.bannedUsers.toString(),
+                  Icons.block, Colors.red),
+              _buildStatCard('Registros (7d)', _stats!.recentSignups.toString(),
+                  Icons.trending_up, Colors.orange),
             ],
           ),
           const SizedBox(height: 24),
-          const Text('Contenido', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const Text('Contenido',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
           GridView.count(
             crossAxisCount: 2,
@@ -172,10 +254,14 @@ class _DashboardTabState extends State<_DashboardTab> {
             mainAxisSpacing: 8,
             crossAxisSpacing: 8,
             children: [
-              _buildStatCard('Videos Totales', _stats!.totalVideos.toString(), Icons.video_library, Colors.purple),
-              _buildStatCard('Publicados', _stats!.publishedVideos.toString(), Icons.visibility, Colors.indigo),
-              _buildStatCard('Eliminados', _stats!.removedVideos.toString(), Icons.delete_outline, Colors.grey),
-              _buildStatCard('Comentarios', _stats!.totalComments.toString(), Icons.comment, Colors.teal),
+              _buildStatCard('Videos Totales', _stats!.totalVideos.toString(),
+                  Icons.video_library, Colors.purple),
+              _buildStatCard('Publicados', _stats!.publishedVideos.toString(),
+                  Icons.visibility, Colors.indigo),
+              _buildStatCard('Eliminados', _stats!.removedVideos.toString(),
+                  Icons.delete_outline, Colors.grey),
+              _buildStatCard('Comentarios', _stats!.totalComments.toString(),
+                  Icons.comment, Colors.teal),
             ],
           ),
         ],
@@ -183,7 +269,8 @@ class _DashboardTabState extends State<_DashboardTab> {
     );
   }
 
-  Widget _buildStatCard(String title, String value, IconData icon, Color color) {
+  Widget _buildStatCard(
+      String title, String value, IconData icon, Color color) {
     return Card(
       elevation: 2,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -194,8 +281,11 @@ class _DashboardTabState extends State<_DashboardTab> {
           children: [
             Icon(icon, color: color, size: 28),
             const SizedBox(height: 4),
-            Text(value, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-            Text(title, style: const TextStyle(fontSize: 12, color: Colors.black54)),
+            Text(value,
+                style:
+                    const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+            Text(title,
+                style: const TextStyle(fontSize: 12, color: Colors.black54)),
           ],
         ),
       ),
@@ -204,16 +294,20 @@ class _DashboardTabState extends State<_DashboardTab> {
 
   Future<void> _triggerRetraining() async {
     final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text("Reentrenar Módulo IA"),
-        content: const Text("Esta operación consumirá CPU en el servidor en segundo plano calculando nuevos pesos de Features para los usuarios. ¿Proceder?"),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("Cancelar")),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text("Iniciar Entrenamiento")),
-        ],
-      )
-    );
+        context: context,
+        builder: (ctx) => AlertDialog(
+              title: const Text("Reentrenar Módulo IA"),
+              content: const Text(
+                  "Esta operación consumirá CPU en el servidor en segundo plano calculando nuevos pesos de Features para los usuarios. ¿Proceder?"),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(ctx, false),
+                    child: const Text("Cancelar")),
+                TextButton(
+                    onPressed: () => Navigator.pop(ctx, true),
+                    child: const Text("Iniciar Entrenamiento")),
+              ],
+            ));
 
     if (confirm != true) return;
 
@@ -221,16 +315,26 @@ class _DashboardTabState extends State<_DashboardTab> {
       final storage = const flutter_secure_storage.FlutterSecureStorage();
       final token = await storage.read(key: 'jwt_token');
       final url = Uri.parse('${AppConfig.apiBaseUrl}/v1/admin/retrain');
-      
-      final response = await http.post(url, headers: {'Authorization': 'Bearer $token'});
-      
+
+      final response =
+          await http.post(url, headers: {'Authorization': 'Bearer $token'});
+
       if (response.statusCode == 202) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Entrenamiento IA encolado correctamente"), backgroundColor: Colors.green));
+        if (mounted)
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Text("Entrenamiento IA encolado correctamente"),
+              backgroundColor: Colors.green));
       } else {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Motor rechazó ejecución: STATUS ${response.statusCode}"), backgroundColor: Colors.red));
+        if (mounted)
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text(
+                  "Motor rechazó ejecución: STATUS ${response.statusCode}"),
+              backgroundColor: Colors.red));
       }
-    } catch(e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red));
+    } catch (e) {
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red));
     }
   }
 }
@@ -248,7 +352,7 @@ class _UsersTab extends StatefulWidget {
 class _UsersTabState extends State<_UsersTab> {
   final AdminApiService _apiService = AdminApiService();
   final TextEditingController _searchController = TextEditingController();
-  
+
   final List<AdminUser> _users = [];
   bool _isLoading = false;
   int _currentPage = 1;
@@ -296,14 +400,16 @@ class _UsersTabState extends State<_UsersTab> {
 
   void _showError(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), backgroundColor: Colors.red));
+    ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(msg), backgroundColor: Colors.red));
   }
 
   Future<void> _changeStatus(AdminUser user, String newStatus) async {
     final res = await _apiService.updateUserStatus(user.id, newStatus);
     if (!mounted) return;
     if (res.isSuccess) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Estado actualizado')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Estado actualizado')));
       _loadUsers(refresh: true);
     } else {
       _showError(res.error?.message ?? 'Error updating status');
@@ -314,7 +420,8 @@ class _UsersTabState extends State<_UsersTab> {
     final res = await _apiService.updateUserRole(user.id, newRole);
     if (!mounted) return;
     if (res.isSuccess) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Rol actualizado')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Rol actualizado')));
       _loadUsers(refresh: true);
     } else {
       _showError(res.error?.message ?? 'Error updating role');
@@ -335,8 +442,10 @@ class _UsersTabState extends State<_UsersTab> {
                   decoration: InputDecoration(
                     hintText: 'Buscar email o nombre...',
                     prefixIcon: const Icon(Icons.search),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8)),
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
                   ),
                   onSubmitted: (_) => _loadUsers(refresh: true),
                 ),
@@ -358,7 +467,10 @@ class _UsersTabState extends State<_UsersTab> {
               itemBuilder: (context, index) {
                 if (index == _users.length) {
                   if (!_isLoading) _loadUsers();
-                  return const Center(child: Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator()));
+                  return const Center(
+                      child: Padding(
+                          padding: EdgeInsets.all(16),
+                          child: CircularProgressIndicator()));
                 }
                 final user = _users[index];
                 return _buildUserCard(user);
@@ -375,10 +487,13 @@ class _UsersTabState extends State<_UsersTab> {
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       child: ExpansionTile(
         leading: CircleAvatar(
-          backgroundImage: user.avatarUrl != null ? NetworkImage(user.avatarUrl!) : null,
-          child: user.avatarUrl == null ? Text(user.name[0].toUpperCase()) : null,
+          backgroundImage:
+              user.avatarUrl != null ? NetworkImage(user.avatarUrl!) : null,
+          child:
+              user.avatarUrl == null ? Text(user.name[0].toUpperCase()) : null,
         ),
-        title: Text('${user.name} ${user.lastName}', style: const TextStyle(fontWeight: FontWeight.bold)),
+        title: Text('${user.name} ${user.lastName}',
+            style: const TextStyle(fontWeight: FontWeight.bold)),
         subtitle: Text(user.email),
         trailing: _buildStatusBadge(user.statusCode),
         children: [
@@ -390,12 +505,15 @@ class _UsersTabState extends State<_UsersTab> {
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Cambiar Estado', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                    const Text('Cambiar Estado',
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 12)),
                     DropdownButton<String>(
                       value: user.statusCode,
                       items: _buildStatusItems(user.statusCode),
                       onChanged: (val) {
-                        if (val != null && val != user.statusCode) _changeStatus(user, val);
+                        if (val != null && val != user.statusCode)
+                          _changeStatus(user, val);
                       },
                     ),
                   ],
@@ -403,12 +521,15 @@ class _UsersTabState extends State<_UsersTab> {
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Cambiar Rol', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                    const Text('Cambiar Rol',
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 12)),
                     DropdownButton<String>(
                       value: user.roleCode,
                       items: _buildRoleItems(user.roleCode),
                       onChanged: (val) {
-                        if (val != null && val != user.roleCode) _changeRole(user, val);
+                        if (val != null && val != user.roleCode)
+                          _changeRole(user, val);
                       },
                     ),
                   ],
@@ -423,9 +544,14 @@ class _UsersTabState extends State<_UsersTab> {
 
   /// Construye items de estado, asegurándose que el valor actual siempre esté presente.
   List<DropdownMenuItem<String>> _buildStatusItems(String currentValue) {
-    final knownStatuses = {'activo': 'Activo', 'suspendido': 'Suspendido', 'baneado': 'Baneado'};
+    final knownStatuses = {
+      'activo': 'Activo',
+      'suspendido': 'Suspendido',
+      'baneado': 'Baneado'
+    };
     if (!knownStatuses.containsKey(currentValue)) {
-      knownStatuses[currentValue] = currentValue[0].toUpperCase() + currentValue.substring(1);
+      knownStatuses[currentValue] =
+          currentValue[0].toUpperCase() + currentValue.substring(1);
     }
     return knownStatuses.entries
         .map((e) => DropdownMenuItem(value: e.key, child: Text(e.value)))
@@ -434,9 +560,16 @@ class _UsersTabState extends State<_UsersTab> {
 
   /// Construye items de rol, asegurándose que el valor actual siempre esté presente.
   List<DropdownMenuItem<String>> _buildRoleItems(String currentValue) {
-    final knownRoles = {'estudiante': 'Estudiante', 'profesor': 'Profesor', 'aspirante': 'Aspirante', 'moderador': 'Moderador', 'admin': 'Admin'};
+    final knownRoles = {
+      'estudiante': 'Estudiante',
+      'profesor': 'Profesor',
+      'aspirante': 'Aspirante',
+      'moderador': 'Moderador',
+      'admin': 'Admin'
+    };
     if (!knownRoles.containsKey(currentValue)) {
-      knownRoles[currentValue] = currentValue[0].toUpperCase() + currentValue.substring(1);
+      knownRoles[currentValue] =
+          currentValue[0].toUpperCase() + currentValue.substring(1);
     }
     return knownRoles.entries
         .map((e) => DropdownMenuItem(value: e.key, child: Text(e.value)))
@@ -460,8 +593,12 @@ class _UsersTabState extends State<_UsersTab> {
     }
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(color: color.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(12)),
-      child: Text(status.toUpperCase(), style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.bold)),
+      decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.2),
+          borderRadius: BorderRadius.circular(12)),
+      child: Text(status.toUpperCase(),
+          style: TextStyle(
+              color: color, fontSize: 10, fontWeight: FontWeight.bold)),
     );
   }
 }
@@ -479,7 +616,7 @@ class _VideosTab extends StatefulWidget {
 class _VideosTabState extends State<_VideosTab> {
   final AdminApiService _apiService = AdminApiService();
   final TextEditingController _searchController = TextEditingController();
-  
+
   final List<AdminVideo> _videos = [];
   bool _isLoading = false;
   int _currentPage = 1;
@@ -527,14 +664,16 @@ class _VideosTabState extends State<_VideosTab> {
 
   void _showError(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), backgroundColor: Colors.red));
+    ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(msg), backgroundColor: Colors.red));
   }
 
   Future<void> _changeStatus(AdminVideo video, String newStatus) async {
     final res = await _apiService.updateVideoStatus(video.id, newStatus);
     if (!mounted) return;
     if (res.isSuccess) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Estado de video actualizado')));
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Estado de video actualizado')));
       _loadVideos(refresh: true);
     } else {
       _showError(res.error?.message ?? 'Error updating video status');
@@ -546,10 +685,16 @@ class _VideosTabState extends State<_VideosTab> {
       context: context,
       builder: (c) => AlertDialog(
         title: const Text('Confirmar Eliminación'),
-        content: const Text('¿Estás seguro de eliminar PERMANENTEMENTE este video?'),
+        content:
+            const Text('¿Estás seguro de eliminar PERMANENTEMENTE este video?'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancelar')),
-          TextButton(onPressed: () => Navigator.pop(c, true), child: const Text('Eliminar', style: TextStyle(color: Colors.red))),
+          TextButton(
+              onPressed: () => Navigator.pop(c, false),
+              child: const Text('Cancelar')),
+          TextButton(
+              onPressed: () => Navigator.pop(c, true),
+              child:
+                  const Text('Eliminar', style: TextStyle(color: Colors.red))),
         ],
       ),
     );
@@ -558,7 +703,8 @@ class _VideosTabState extends State<_VideosTab> {
       final res = await _apiService.deleteVideo(video.id);
       if (!mounted) return;
       if (res.isSuccess) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Video eliminado permanentemente')));
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Video eliminado permanentemente')));
         _loadVideos(refresh: true);
       } else {
         _showError(res.error?.message ?? 'Error deleting video');
@@ -577,8 +723,10 @@ class _VideosTabState extends State<_VideosTab> {
             decoration: InputDecoration(
               hintText: 'Buscar título de video...',
               prefixIcon: const Icon(Icons.search),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
+              border:
+                  OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
             ),
             onSubmitted: (_) => _loadVideos(refresh: true),
           ),
@@ -591,7 +739,10 @@ class _VideosTabState extends State<_VideosTab> {
               itemBuilder: (context, index) {
                 if (index == _videos.length) {
                   if (!_isLoading) _loadVideos();
-                  return const Center(child: Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator()));
+                  return const Center(
+                      child: Padding(
+                          padding: EdgeInsets.all(16),
+                          child: CircularProgressIndicator()));
                 }
                 final video = _videos[index];
                 return _buildVideoCard(video);
@@ -608,10 +759,17 @@ class _VideosTabState extends State<_VideosTab> {
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       child: ExpansionTile(
         leading: video.thumbnailUrl != null
-            ? Image.network(video.thumbnailUrl!, width: 50, height: 50, fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => const Icon(Icons.video_file, size: 40))
+            ? Image.network(video.thumbnailUrl!,
+                width: 50,
+                height: 50,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) =>
+                    const Icon(Icons.video_file, size: 40))
             : const Icon(Icons.video_file, size: 40),
-        title: Text(video.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold)),
+        title: Text(video.title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontWeight: FontWeight.bold)),
         subtitle: Text('ID: ${video.id} • ${video.authorName}'),
         trailing: _buildStatusBadge(video.statusCode),
         children: [
@@ -622,7 +780,9 @@ class _VideosTabState extends State<_VideosTab> {
               children: [
                 Text('Descripción: ${video.description}'),
                 const SizedBox(height: 8),
-                Text('Likes: ${video.likesCount} • Comentarios: ${video.commentsCount}', style: const TextStyle(color: Colors.grey)),
+                Text(
+                    'Likes: ${video.likesCount} • Comentarios: ${video.commentsCount}',
+                    style: const TextStyle(color: Colors.grey)),
                 const Divider(),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -631,14 +791,17 @@ class _VideosTabState extends State<_VideosTab> {
                       value: video.statusCode,
                       items: _buildVideoStatusItems(video.statusCode),
                       onChanged: (val) {
-                        if (val != null && val != video.statusCode) _changeStatus(video, val);
+                        if (val != null && val != video.statusCode)
+                          _changeStatus(video, val);
                       },
                     ),
                     ElevatedButton.icon(
                       onPressed: () => _deleteVideo(video),
                       icon: const Icon(Icons.delete_forever),
                       label: const Text('Eliminar (Hard)'),
-                      style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+                      style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red,
+                          foregroundColor: Colors.white),
                     ),
                   ],
                 ),
@@ -652,9 +815,14 @@ class _VideosTabState extends State<_VideosTab> {
 
   /// Construye items de estado de video, asegurándose que el valor actual siempre esté presente.
   List<DropdownMenuItem<String>> _buildVideoStatusItems(String currentValue) {
-    final knownStatuses = {'publicado': 'Publicado', 'oculto': 'Oculto', 'eliminado': 'Eliminado'};
+    final knownStatuses = {
+      'publicado': 'Publicado',
+      'oculto': 'Oculto',
+      'eliminado': 'Eliminado'
+    };
     if (!knownStatuses.containsKey(currentValue)) {
-      knownStatuses[currentValue] = currentValue[0].toUpperCase() + currentValue.substring(1);
+      knownStatuses[currentValue] =
+          currentValue[0].toUpperCase() + currentValue.substring(1);
     }
     return knownStatuses.entries
         .map((e) => DropdownMenuItem(value: e.key, child: Text(e.value)))
@@ -678,8 +846,12 @@ class _VideosTabState extends State<_VideosTab> {
     }
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(color: color.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(12)),
-      child: Text(status.toUpperCase(), style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.bold)),
+      decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.2),
+          borderRadius: BorderRadius.circular(12)),
+      child: Text(status.toUpperCase(),
+          style: TextStyle(
+              color: color, fontSize: 10, fontWeight: FontWeight.bold)),
     );
   }
 }
@@ -696,7 +868,7 @@ class _ReportsTab extends StatefulWidget {
 
 class _ReportsTabState extends State<_ReportsTab> {
   final AdminApiService _apiService = AdminApiService();
-  
+
   final List<AdminReport> _reports = [];
   bool _isLoading = false;
   int _currentPage = 1;
@@ -741,7 +913,8 @@ class _ReportsTabState extends State<_ReportsTab> {
 
   void _showError(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), backgroundColor: Colors.red));
+    ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(msg), backgroundColor: Colors.red));
   }
 
   Future<void> _resolveReport(AdminReport report, String action) async {
@@ -749,7 +922,8 @@ class _ReportsTabState extends State<_ReportsTab> {
     final res = await _apiService.resolveReport(report.reportId, action);
     if (!mounted) return;
     if (res.isSuccess) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Reporte gestionado')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Reporte gestionado')));
       _loadReports(refresh: true);
     } else {
       _showError(res.error?.message ?? 'Error al procesar el reporte');
@@ -764,20 +938,27 @@ class _ReportsTabState extends State<_ReportsTab> {
           padding: EdgeInsets.all(16.0),
           child: Text(
             'Denuncias Pendientes de Revisión',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87),
+            style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: Colors.black87),
           ),
         ),
         Expanded(
           child: RefreshIndicator(
             onRefresh: () => _loadReports(refresh: true),
             child: _reports.isEmpty && !_isLoading
-                ? const Center(child: Text('¡Excelente! No hay denuncias pendientes.'))
+                ? const Center(
+                    child: Text('¡Excelente! No hay denuncias pendientes.'))
                 : ListView.builder(
                     itemCount: _reports.length + (_hasMore ? 1 : 0),
                     itemBuilder: (context, index) {
                       if (index == _reports.length) {
                         if (!_isLoading) _loadReports();
-                        return const Center(child: Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator()));
+                        return const Center(
+                            child: Padding(
+                                padding: EdgeInsets.all(16),
+                                child: CircularProgressIndicator()));
                       }
                       final report = _reports[index];
                       return _buildReportCard(report);
@@ -793,7 +974,9 @@ class _ReportsTabState extends State<_ReportsTab> {
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: Colors.red.shade100)),
+      shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: Colors.red.shade100)),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -802,12 +985,16 @@ class _ReportsTabState extends State<_ReportsTab> {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(Icons.warning_amber_rounded, color: Colors.red, size: 22),
+                const Icon(Icons.warning_amber_rounded,
+                    color: Colors.red, size: 22),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
                     'Motivo: ${report.motivo}',
-                    style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.red, fontSize: 16),
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.red,
+                        fontSize: 16),
                   ),
                 ),
                 Text(
@@ -820,7 +1007,7 @@ class _ReportsTabState extends State<_ReportsTab> {
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: Colors.red.shade50.withValues(alpha: 0.5), 
+                color: Colors.red.shade50.withValues(alpha: 0.5),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: Colors.red.shade100, width: 1),
               ),
@@ -829,13 +1016,22 @@ class _ReportsTabState extends State<_ReportsTab> {
                 children: [
                   Row(
                     children: [
-                      const Icon(Icons.person_outline, size: 16, color: Colors.black54),
+                      const Icon(Icons.person_outline,
+                          size: 16, color: Colors.black54),
                       const SizedBox(width: 4),
-                      Text('Comentario de ${report.authorName}:', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.black87)),
+                      Text('Comentario de ${report.authorName}:',
+                          style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                              color: Colors.black87)),
                     ],
                   ),
                   const SizedBox(height: 8),
-                  Text('"${report.commentText}"', style: const TextStyle(fontStyle: FontStyle.italic, fontSize: 15, color: Colors.black87)),
+                  Text('"${report.commentText}"',
+                      style: const TextStyle(
+                          fontStyle: FontStyle.italic,
+                          fontSize: 15,
+                          color: Colors.black87)),
                 ],
               ),
             ),
@@ -844,7 +1040,9 @@ class _ReportsTabState extends State<_ReportsTab> {
               children: [
                 const Icon(Icons.flag_outlined, size: 14, color: Colors.grey),
                 const SizedBox(width: 4),
-                Text('Denunciado por: ${report.reporterName}', style: const TextStyle(fontSize: 12, color: Colors.black54)),
+                Text('Denunciado por: ${report.reporterName}',
+                    style:
+                        const TextStyle(fontSize: 12, color: Colors.black54)),
               ],
             ),
             const SizedBox(height: 16),
@@ -856,18 +1054,23 @@ class _ReportsTabState extends State<_ReportsTab> {
                 TextButton.icon(
                   onPressed: () => _resolveReport(report, 'ignore'),
                   icon: const Icon(Icons.close, color: Colors.grey, size: 18),
-                  label: const Text('Ignorar', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
+                  label: const Text('Ignorar',
+                      style: TextStyle(
+                          color: Colors.grey, fontWeight: FontWeight.bold)),
                 ),
                 ElevatedButton.icon(
                   onPressed: () => _resolveReport(report, 'delete'),
                   icon: const Icon(Icons.delete_outline, size: 18),
-                  label: const Text('Eliminar', style: TextStyle(fontWeight: FontWeight.bold)),
+                  label: const Text('Eliminar',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.red.shade600, 
+                    backgroundColor: Colors.red.shade600,
                     foregroundColor: Colors.white,
                     elevation: 0,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8)),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 10),
                   ),
                 ),
               ],

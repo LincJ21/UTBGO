@@ -13,9 +13,9 @@ import (
 //
 // Reglas de mapeo (en orden de prioridad):
 //   1. Email @admin.utb.edu.co             → admin       (nivel 10)
-//   2. Microsoft + @utb.edu.co             → profesor    (nivel 3)
-//   3. Google/cualquiera + @utb.edu.co     → estudiante  (nivel 1)
-//   4. Cualquier otro dominio              → aspirante   (nivel 1)
+//   2. @utb.edu.co (cualquier proveedor)   → estudiante  (nivel 1)
+//      (Los profesores son ascendidos manualmente por el administrador)
+//   3. Cualquier otro dominio              → aspirante   (nivel 1)
 //
 // Variables de entorno:
 //   - INSTITUTIONAL_DOMAIN: dominio institucional (ej: utb.edu.co)
@@ -111,16 +111,8 @@ func (rm *RoleMapper) MapRole(email, provider string) string {
 		return RoleAdmin
 	}
 
-	// 2. Microsoft + dominio institucional → profesor
-	if provider == microsoftProviderName && rm.isInstitutionalDomain(domain) {
-		Logger.Info("RoleMapper: asignado rol profesor (Microsoft + institucional)",
-			"email", email,
-			"provider", provider,
-		)
-		return RoleProfesor
-	}
-
-	// 3. Dominio institucional (cualquier proveedor) → estudiante
+	// 2. Dominio institucional (cualquier proveedor, Google o Microsoft) → estudiante
+	// (Los profesores deben ser ascendidos manualmente por el administrador)
 	if rm.isInstitutionalDomain(domain) {
 		Logger.Info("RoleMapper: asignado rol estudiante (institucional)",
 			"email", email,
@@ -129,7 +121,7 @@ func (rm *RoleMapper) MapRole(email, provider string) string {
 		return RoleEstudiante
 	}
 
-	// 4. Dominio externo → aspirante
+	// 3. Dominio externo → aspirante
 	Logger.Info("RoleMapper: asignado rol aspirante (externo)",
 		"email", email,
 		"provider", provider,

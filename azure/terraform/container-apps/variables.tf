@@ -84,6 +84,18 @@ variable "firebase_project_id" {
   description = "Firebase Project ID for token validation"
 }
 
+variable "azure_oidc_client_id" {
+  type        = string
+  description = "Azure App Registration Client ID for Microsoft OIDC login"
+  default     = ""
+}
+
+variable "azure_oidc_tenant_id" {
+  type        = string
+  description = "Azure Tenant ID for Microsoft OIDC login (use 'common' for multitenant)"
+  default     = "common"
+}
+
 # --- Domains & Roles ---
 
 variable "institutional_domain" {

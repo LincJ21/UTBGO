@@ -81,6 +81,14 @@ resource "azurerm_container_app" "api" {
         name        = "TRACKING_API_KEY"
         secret_name = "tracking-api-key"
       }
+      env {
+        name  = "AZURE_CLIENT_ID"
+        value = var.azure_oidc_client_id
+      }
+      env {
+        name  = "AZURE_TENANT_ID"
+        value = var.azure_oidc_tenant_id
+      }
     }
     
     min_replicas = 1

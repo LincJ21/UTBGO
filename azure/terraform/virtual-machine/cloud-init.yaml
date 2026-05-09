@@ -38,6 +38,10 @@ runcmd:
     JWT_SECRET_KEY="${jwt_secret_key}"
     FIREBASE_PROJECT_ID="${firebase_project_id}"
     GOOGLE_CLIENT_ID="${google_client_id}"
+    AZURE_CLIENT_ID="${azure_oidc_client_id}"
+    AZURE_TENANT_ID="${azure_oidc_tenant_id}"
+    INSTITUTIONAL_DOMAIN="${institutional_domain}"
+    ADMIN_DOMAIN="${admin_domain}"
     
     # Internal APIs
     TRACKING_API_KEY="${tracking_api_key}"
@@ -50,6 +54,7 @@ runcmd:
     EOF
   
   # 5. Ajustar permisos
+  - chmod 600 /home/adminuser/utbgo-repo/.env
   - chown -R adminuser:adminuser /home/adminuser/utbgo-repo
   
   # 6. Levantar los contenedores
