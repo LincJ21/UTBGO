@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/hmac"
 	"encoding/json"
 	"fmt"
 	"html"
@@ -512,7 +513,7 @@ func handleVideoReady(c *gin.Context) {
 	// Validar API Key interna
 	apiKey := c.GetHeader("X-Internal-API-Key")
 	expectedKey := os.Getenv("VIDEO_WORKER_API_KEY")
-	if expectedKey == "" || apiKey != expectedKey {
+	if expectedKey == "" || !hmac.Equal([]byte(apiKey), []byte(expectedKey)) {
 		Logger.Warn("Intento de acceso no autorizado a /video-ready", "provided_key", apiKey[:min(len(apiKey), 8)]+"...")
 		RespondError(c, ErrUnauthorized())
 		return
@@ -811,9 +812,8 @@ func handleGetCommentsV2(c *gin.Context) {
 	RespondSuccess(c, response)
 }
 
-// handleDeleteCommentV2 permite a un usuario borrar su propio comentario.
 func handleDeleteCommentV2(c *gin.Context) {
-	userIDVal, exists := c.Get("id_usuario")
+	userIDVal, exists := c.Get("userID")
 	if !exists {
 		Logger.Warn("Usuario no autenticado intentando borrar comentario")
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "No autorizado"})
@@ -838,7 +838,7 @@ func handleDeleteCommentV2(c *gin.Context) {
 
 	// Invalidar caché (de forma simple)
 	videoID, _ := strconv.Atoi(c.Query("video_id")) // Opcional, para limpiar caché si se pasa
-	if videoID > 0 {
+	if videoID > 0 && Cache != nil {
 		cacheKey := fmt.Sprintf("comments:video:%d", videoID)
 		Cache.Delete(ctx, cacheKey)
 	}

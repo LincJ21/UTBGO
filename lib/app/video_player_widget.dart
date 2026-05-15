@@ -136,7 +136,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
 
   void _shareVideo() {
     final title = widget.video.title.isNotEmpty ? widget.video.title : 'este video';
-    final shareText = '¡Mira $title en UTBGO! \n\nhttps://utbgo.app/video/${widget.video.id}';
+    final shareText = '¡Mira $title en UTBGO! \n\nhttps://utbgo-api.redpebble-49efc34a.eastus2.azurecontainerapps.io/video/${widget.video.id}';
     Share.share(shareText);
   }
 

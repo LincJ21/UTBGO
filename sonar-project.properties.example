@@ -1,0 +1,47 @@
+# =========================================================
+# Plantilla de Configuración de SonarCloud para Monorepos
+# =========================================================
+
+# La clave única de tu proyecto en SonarCloud
+sonar.projectKey=TU_ORGANIZACION_NOMBRE_PROYECTO
+
+# La clave de la organización en SonarCloud
+sonar.organization=TU_CLAVE_DE_ORGANIZACION
+
+# El nombre que se mostrará para tu proyecto
+sonar.projectName=Ejemplo de Nombre de Proyecto
+
+# Codificación de caracteres
+sonar.sourceEncoding=UTF-8
+
+# =========================================================
+# Directorios de Código Fuente
+# Lista todos los directorios que contienen código fuente (relativo a la raíz)
+# =========================================================
+sonar.sources=api,frontend,microservice-a,microservice-b
+
+# =========================================================
+# Directorios de Pruebas y Exclusiones
+# =========================================================
+# Ignorar archivos de prueba, código generado y dependencias para métricas de cobertura y duplicación
+sonar.exclusions=**/test/**,**/tests/**,**/vendor/**,**/node_modules/**,**/*_test.go,**/*.spec.ts,**/gen/**
+
+# Especifica los directorios donde se encuentran las pruebas
+sonar.tests=api,frontend,microservice-a
+
+# Patrón para identificar archivos de prueba
+sonar.test.inclusions=**/*_test.go,**/*.spec.ts,**/test_*.py
+
+# =========================================================
+# Configuraciones Específicas por Lenguaje (Ejemplos)
+# =========================================================
+
+# Cobertura en Go
+# sonar.go.coverage.reportPaths=api/coverage.out
+
+# Cobertura en Python
+# sonar.python.coverage.reportPaths=microservice-a/coverage.xml,microservice-b/coverage.xml
+
+# Cobertura en JavaScript / TypeScript / Dart
+# sonar.javascript.lcov.reportPaths=frontend/coverage/lcov.info
+# sonar.dart.coverage.reportPaths=coverage/lcov.info

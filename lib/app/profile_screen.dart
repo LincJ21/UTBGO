@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'package:http/http.dart' as http;
 import 'profile_model.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -29,6 +30,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
   late Future<ProfileModel> _profileFuture;
   final _storage = const FlutterSecureStorage();
   int _selectedPublicationTab = 0;
+  int _currentCarouselIndex = 0;
+  
+  Timer? _carouselTimer;
+  final PageController _carouselController = PageController();
 
   final _apiClient = ApiClient();
 
@@ -36,10 +41,30 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void initState() {
     super.initState();
     _profileFuture = _fetchProfile();
+    _startCarouselTimer();
+  }
+
+  void _startCarouselTimer() {
+    _carouselTimer?.cancel(); // Safe pause
+    _carouselTimer = Timer.periodic(const Duration(seconds: 4), (Timer timer) {
+      int nextIndex = _currentCarouselIndex + 1;
+      if (nextIndex > 3) {
+        nextIndex = 0;
+      }
+      if (_carouselController.hasClients) {
+        _carouselController.animateToPage(
+          nextIndex,
+          duration: const Duration(milliseconds: 500),
+          curve: Curves.easeInOutCubic,
+        );
+      }
+    });
   }
 
   @override
   void dispose() {
+    _carouselTimer?.cancel();
+    _carouselController.dispose();
     super.dispose();
   }
 
@@ -154,11 +179,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
     } else if (isAspirante) {
       // Los aspirantes NO tienen permiso de repostear, por lo tanto no se muestra esa pestaña
       tabs = const [
-        Tab(text: 'STATS'),
+        Tab(text: 'INFO'),
         Tab(icon: Icon(Icons.bookmark_border)),
       ];
       tabViews = [
-        _buildStatsTab(profile),
+        _buildAspiranteInfoTab(),
         _buildBookmarksTab(profile),
       ];
     } else {
@@ -372,7 +397,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   ? 'Profesor de la Universidad Tecnológica de Bolívar.'
                                   : profile.role == 'admin'
                                       ? 'Administrador del sistema UTBGO'
-                                      : 'Estudiante de la UTB'),
+                                      : profile.role == 'aspirante'
+                                          ? 'Aspirante a la UTB'
+                                          : 'Estudiante de la UTB'),
                           style: const TextStyle(
                               fontSize: 14, color: Color(0xFF334155), height: 1.5),
                         ),
@@ -489,6 +516,190 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ],
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildAspiranteInfoTab() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.only(bottom: 20),
+      child: Column(
+        children: [
+          // Carousel (PageView)
+          SizedBox(
+            height: 200,
+            child: Listener(
+              onPointerDown: (_) => _carouselTimer?.cancel(),
+              onPointerUp: (_) => _startCarouselTimer(),
+              onPointerCancel: (_) => _startCarouselTimer(),
+              child: PageView(
+                controller: _carouselController,
+              onPageChanged: (index) {
+                setState(() {
+                  _currentCarouselIndex = index;
+                });
+              },
+              children: [
+                _buildCarouselCard(
+                  title: '¡Nuevos Programas!',
+                  subtitle: 'Inscripciones abiertas 2026-2P.',
+                  imageUrl: 'https://www.utb.edu.co/wp-content/uploads/2024/04/background-unidades-de-apoyo-de-rectoria-1.png',
+                ),
+                _buildCarouselCard(
+                  title: 'Explora tu Campus',
+                  subtitle: 'Instalaciones modernas y laboratorios.',
+                  imageUrl: 'https://www.utb.edu.co/wp-content/uploads/2022/10/ExpoUTB6.jpg',
+                ),
+                _buildCarouselCard(
+                  title: 'Conexión Empresarial',
+                  subtitle: 'Elige la educación que cambia todo.',
+                  imageUrl: 'https://images.unsplash.com/photo-1523240795612-9a054b0db644?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+                ),
+                _buildCarouselCard(
+                  title: 'Vive la Experiencia',
+                  subtitle: 'Estudia en la UTB y asegura tu futuro.',
+                  imageUrl: 'https://images.unsplash.com/photo-1517486808906-6ca8b3f04846?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=60',
+                ),
+              ],
+            ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          // Indicadores del carousel
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: List.generate(4, (index) {
+              return AnimatedContainer(
+                duration: const Duration(milliseconds: 300),
+                width: 8,
+                height: 8,
+                margin: const EdgeInsets.symmetric(horizontal: 4),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: _currentCarouselIndex == index ? const Color(0xFF001F60) : Colors.grey.shade400,
+                ),
+              );
+            }),
+          ),
+          const SizedBox(height: 24),
+          // Row of 2 Cards (Distributes horizontal space perfectly)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              children: [
+                _buildVerticalCard(
+                  title: 'Conoce la UTB',
+                  subtitle: 'Descubre tu futuro',
+                  icon: Icons.school,
+                  color: const Color(0xFF001F60), // Azul Marino UTB
+                  imageUrl: 'https://images.unsplash.com/photo-1541339907198-e08756dedf3f?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=60',
+                  onTap: () => _launchURL('https://www.utb.edu.co/'),
+                ),
+                const SizedBox(width: 16),
+                _buildVerticalCard(
+                  title: 'Inscripciones',
+                  subtitle: 'Admisiones 2026',
+                  icon: Icons.how_to_reg,
+                  color: const Color(0xFFE5B300), // Amarillo Dorado UTB
+                  imageUrl: 'https://images.unsplash.com/photo-1523240795612-9a054b0db644?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=60',
+                  onTap: () => _launchURL('https://www.utb.edu.co/inscripciones-y-admisiones/'),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCarouselCard({required String title, required String subtitle, required String imageUrl}) {
+    return Container(
+      decoration: BoxDecoration(
+        image: DecorationImage(
+          image: NetworkImage(imageUrl),
+          fit: BoxFit.cover,
+        ),
+      ),
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Colors.transparent, Colors.black.withOpacity(0.75)],
+          ),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+        alignment: Alignment.bottomLeft,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 4),
+            Text(subtitle, style: const TextStyle(color: Colors.white, fontSize: 13)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildVerticalCard({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required Color color,
+    required String imageUrl,
+    required VoidCallback onTap,
+  }) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          height: 110,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            image: DecorationImage(
+              image: NetworkImage(imageUrl),
+              fit: BoxFit.cover,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.08),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              )
+            ]
+          ),
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [Colors.transparent, Colors.black.withOpacity(0.85)],
+              ),
+            ),
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: color,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(icon, color: Colors.white, size: 16),
+                ),
+                const Spacer(),
+                Text(title, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 2),
+                Text(subtitle, style: const TextStyle(color: Colors.white70, fontSize: 11)),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

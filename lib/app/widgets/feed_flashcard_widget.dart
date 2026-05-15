@@ -99,7 +99,7 @@ class _FeedFlashcardWidgetState extends State<FeedFlashcardWidget> {
 
   void _shareContent() {
     final String shareText =
-        'Mira esta flashcard en UTBGO: ${widget.video.title}\n${widget.video.description}\nhttps://utbgo.app/content/${widget.video.id}';
+        'Mira esta flashcard en UTBGO: ${widget.video.title}\n${widget.video.description}\nhttps://utbgo-api.redpebble-49efc34a.eastus2.azurecontainerapps.io/content/${widget.video.id}';
     Share.share(shareText);
   }
 

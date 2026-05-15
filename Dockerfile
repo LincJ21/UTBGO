@@ -45,8 +45,11 @@ WORKDIR /app
 # Copiar binario desde etapa de build
 COPY --from=builder /build/utbgo-api .
 
-# Cambiar ownership del binario
-RUN chown appuser:appgroup /app/utbgo-api
+# Copiar la carpeta estática para Deep Linking
+COPY api-service/.well-known/ ./.well-known/
+
+# Cambiar ownership del binario y de la carpeta estática
+RUN chown -R appuser:appgroup /app/utbgo-api /app/.well-known
 
 # Usar usuario no-root
 USER appuser

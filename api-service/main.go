@@ -396,6 +396,9 @@ func main() {
 		c.JSON(http.StatusOK, gin.H{"status": "healthy", "db": "connected"})
 	})
 
+	// --- App Links Validation Endpoint ---
+	router.StaticFile("/.well-known/assetlinks.json", "./.well-known/assetlinks.json")
+
 	// --- Configuración de CORS ---
 	// En producción, configura AllowOrigins con dominios específicos.
 	allowedOrigins := os.Getenv("ALLOWED_ORIGINS")
