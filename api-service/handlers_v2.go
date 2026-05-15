@@ -963,6 +963,42 @@ func handleCreateCommentV2(c *gin.Context) {
 	})
 }
 
+// handleGetVideoByID obtiene un video individual por su ID.
+// Endpoint público: GET /api/v1/videos/:id
+// Necesario para resolver Deep Links compartidos.
+func handleGetVideoByID(c *gin.Context) {
+	videoID, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		RespondError(c, ErrInvalidInput("id", "ID de video inválido"))
+		return
+	}
+
+	video, err := Repos.Videos.FindByID(c.Request.Context(), videoID)
+	if err != nil {
+		Logger.Error("Error obteniendo video por ID", "error", err, "video_id", videoID)
+		RespondError(c, ErrDatabase("Error al cargar el video"))
+		return
+	}
+	if video == nil {
+		RespondError(c, ErrNotFound("Video"))
+		return
+	}
+
+	RespondSuccess(c, gin.H{
+		"id":            strconv.Itoa(video.ID),
+		"title":         video.Title,
+		"description":   video.Description,
+		"author_name":   video.AuthorName,
+		"video_url":     video.VideoURL,
+		"thumbnail_url": video.ThumbnailURL,
+		"content_type":  video.ContentType,
+		"created_at":    video.CreatedAt.Format(time.RFC3339),
+		"likes":         video.Likes,
+		"comments":      video.Comments,
+		"category":      video.Category,
+	})
+}
+
 // handleGetFeedV2 obtiene el feed usando repositorios.
 // Usa caché Redis si está disponible (TTL: 5 min).
 func handleGetFeedV2(c *gin.Context) {

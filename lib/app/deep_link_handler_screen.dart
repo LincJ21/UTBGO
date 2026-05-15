@@ -27,7 +27,7 @@ class _DeepLinkHandlerScreenState extends State<DeepLinkHandlerScreen> {
     try {
       final response = await _apiClient.get<Map<String, dynamic>>(
         '${AppConfig.videosEndpoint}/${widget.contentId}',
-        requiresAuth: true,
+        requiresAuth: false,
       );
 
       if (response.isSuccess && response.data != null && mounted) {

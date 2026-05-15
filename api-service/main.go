@@ -480,6 +480,7 @@ func main() {
 		// Videos
 		videos := v1.Group("/videos")
 		{
+		videos.GET("/:id", handleGetVideoByID)
 			videos.GET("/feed", OptionalAuthMiddleware(), handleGetFeedV2)
 			videos.GET("/search", handleSearchV2)
 			videos.POST("/upload", AuthMiddleware(), RequireProfessor(), handleUploadVideoV2)
