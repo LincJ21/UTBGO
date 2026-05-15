@@ -26,7 +26,7 @@ class _MyAppState extends State<MyApp> {
     _appLinks = AppLinks();
 
     try {
-      final initialUri = await _appLinks.getInitialAppLink();
+      final initialUri = await _appLinks.getInitialLink();
       if (initialUri != null) {
         _handleDeepLink(initialUri);
       }
