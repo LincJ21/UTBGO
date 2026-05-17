@@ -73,6 +73,10 @@ class AppConfig {
   static String get videosFeedEndpoint => '$videosEndpoint/feed';
   static String get videosSearchEndpoint => '$videosEndpoint/search';
   static String get videosUploadEndpoint => '$videosEndpoint/upload';
+  
+  /// Obtiene los detalles de un único video.
+  static String videoDetailsUrl(String videoId) => '$videosEndpoint/$videoId';
+
 
   // El endpoint de perfil usa la API v1.
   static String get profileEndpoint => '$backendBaseUrl/api/v1/profile';
@@ -128,6 +132,17 @@ class AppConfig {
   /// Genera URL para votar en una encuesta.
   static String pollVoteUrl(String pollContentId) =>
       '$pollsEndpoint/$pollContentId/vote';
+
+  // --- Endpoints de Gestión de Cuenta ---
+
+  /// URL base para gestión de cuenta.
+  static String get accountEndpoint => '$backendBaseUrl/api/v1/account';
+
+  /// Endpoint para cambiar contraseña.
+  static String get changePasswordEndpoint => '$accountEndpoint/password';
+
+  /// Endpoint para desactivar cuenta.
+  static String get deactivateAccountEndpoint => '$accountEndpoint/deactivate';
 
   // --- Configuración de la App ---
 

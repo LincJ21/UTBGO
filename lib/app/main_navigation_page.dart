@@ -6,6 +6,10 @@ import 'config/api_client.dart';
 import 'profile_screen.dart';
 import 'login_screen.dart';
 import 'videos_screen.dart';
+import 'dart:async';
+import 'package:app_links/app_links.dart';
+import 'video_model.dart';
+import 'single_video_screen.dart';
 import 'explore_screen.dart'; // <--- Importado el nuevo Explore Screen
 
 class MainNavigationPage extends StatefulWidget {
@@ -19,6 +23,9 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
   bool? _isAuthenticated;
   int _selectedIndex = 1;
   bool _isBottomBarVisible = true;
+  
+  late AppLinks _appLinks;
+  StreamSubscription<Uri>? _linkSubscription;
 
   void _setBottomBarVisibility(bool isVisible) {
     if (_isBottomBarVisible != isVisible) {
@@ -51,6 +58,97 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
       ProfileScreen(onLogout: _handleLogout),
     ];
     _checkAuthStatus();
+    _initDeepLinks();
+  }
+
+  Future<void> _initDeepLinks() async {
+    _appLinks = AppLinks();
+
+    // Manejar el enlace inicial (si la app estaba cerrada)
+    try {
+      final initialUri = await _appLinks.getInitialLink();
+      if (initialUri != null) {
+        _handleDeepLink(initialUri);
+      }
+    } catch (e) {
+      debugPrint("Error obteniendo initial link: $e");
+    }
+
+    // Escuchar enlaces mientras la app está abierta (en background o activa)
+    _linkSubscription = _appLinks.uriLinkStream.listen((uri) {
+      _handleDeepLink(uri);
+    }, onError: (err) {
+      debugPrint("Error escuchando deep links: $err");
+    });
+  }
+
+  void _handleDeepLink(Uri uri) async {
+    // Ejemplo de URI: https://utbgo-api.../video/123
+    if (uri.pathSegments.length >= 2 && uri.pathSegments[0] == 'video') {
+      final videoId = uri.pathSegments[1];
+      
+      // Esperar a que la autenticación termine si está en progreso
+      if (_isAuthenticated == null) {
+        await Future.doWhile(() async {
+          await Future.delayed(const Duration(milliseconds: 100));
+          return _isAuthenticated == null;
+        });
+      }
+
+      // Mostrar indicador de carga visualmente usando el context actual si es posible
+      if (!mounted) return;
+      
+      // Mostrar diálogo de carga temporal
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(child: CircularProgressIndicator()),
+      );
+
+      try {
+        final apiClient = ApiClient();
+        final response = await apiClient.get(
+          AppConfig.videoDetailsUrl(videoId),
+          requiresAuth: _isAuthenticated == true, // Enviar token si está autenticado
+        );
+
+        // Cerrar el diálogo de carga
+        if (mounted && Navigator.canPop(context)) {
+          Navigator.pop(context);
+        }
+
+        if (response.isSuccess && response.data != null) {
+          final video = VideoModel.fromJson(response.data as Map<String, dynamic>);
+          
+          if (mounted) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => SingleVideoScreen(video: video),
+              ),
+            );
+          }
+        } else {
+          // Mostrar error si el video no existe o hubo un problema
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('No se pudo cargar el video compartido.')),
+            );
+          }
+        }
+      } catch (e) {
+        // Cerrar el diálogo de carga en caso de excepción
+        if (mounted && Navigator.canPop(context)) {
+          Navigator.pop(context);
+        }
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _linkSubscription?.cancel();
+    super.dispose();
   }
 
   Future<void> _checkAuthStatus() async {

@@ -136,7 +136,8 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
 
   void _shareVideo() {
     final title = widget.video.title.isNotEmpty ? widget.video.title : 'este video';
-    final shareText = '¡Mira $title en UTBGO! \n\nhttps://utbgo.app/video/${widget.video.id}';
+    // Generar el enlace dinámicamente apuntando a nuestro dominio de backend
+    final shareText = '¡Mira $title en UTBGO! \n\nhttps://utbgo-api.redpebble-49efc34a.eastus2.azurecontainerapps.io/video/${widget.video.id}';
     Share.share(shareText);
   }
 
@@ -367,20 +368,39 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
         child: _isSearching
             ? Row(
                 children: [
-                  IconButton(
-                    icon: const Icon(Icons.close, color: Colors.white, size: 26),
-                    onPressed: () => setState(() => _isSearching = false),
+                  Container(
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.3),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: IconButton(
+                      icon: const Icon(Icons.close, color: Colors.white, size: 26),
+                      onPressed: () => setState(() => _isSearching = false),
+                    ),
                   ),
                   Expanded(
                     child: Container(
                       height: 40,
                       decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.3), // Fondo más oscuro para contraste
+                        color: Colors.black.withValues(alpha: 0.3), // Fondo negro semi-transparente para alto contraste
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.2), // Borde sutil transparente
+                          color: Colors.white.withValues(alpha: 0.3),
                           width: 1,
                         ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.2),
+                            blurRadius: 10,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
                       ),
                       child: TextField(
                         controller: _searchController,
@@ -389,7 +409,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
                         cursorColor: Colors.white,
                         decoration: InputDecoration(
                           hintText: 'Buscar en UTBGO...',
-                          hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 14),
+                          hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 14),
                           border: InputBorder.none,
                           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                         ),
@@ -397,9 +417,22 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
                       ),
                     ),
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.search, color: Colors.white),
-                    onPressed: _performSearch,
+                  const SizedBox(width: 8),
+                  Container(
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.3),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: IconButton(
+                      icon: const Icon(Icons.search, color: Colors.white),
+                      onPressed: _performSearch,
+                    ),
                   ),
                 ],
               )
@@ -408,7 +441,20 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
                 children: [
                   GestureDetector(
                     onTap: () => setState(() => _isSearching = true),
-                    child: const Icon(Icons.search, color: Colors.white, size: 28),
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.4),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: const Icon(Icons.search, color: Colors.white, size: 28),
+                    ),
                   ),
                   GestureDetector(
                     onTap: () {
@@ -418,22 +464,36 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
                         ),
                       );
                     },
-                    child: Stack(
-                      children: [
-                        const Icon(Icons.notifications_none, color: Colors.white, size: 28),
-                        Positioned(
-                          right: 2,
-                          top: 2,
-                          child: Container(
-                            width: 8,
-                            height: 8,
-                            decoration: const BoxDecoration(
-                              color: Colors.green, // Simulando el punto verde de la imagen
-                              shape: BoxShape.circle,
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.4),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Stack(
+                        children: [
+                          const Icon(Icons.notifications_none, color: Colors.white, size: 28),
+                          Positioned(
+                            right: 2,
+                            top: 2,
+                            child: Container(
+                              width: 8,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                color: Colors.green, // Simulando el punto verde
+                                shape: BoxShape.circle,
+                                border: Border.all(color: Colors.white, width: 1.5), // Borde blanco para resaltar
+                              ),
                             ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ],

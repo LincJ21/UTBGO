@@ -123,7 +123,7 @@ class _FeedPollWidgetState extends State<FeedPollWidget> {
 
   void _shareContent() {
     final String shareText =
-        'Participa en esta encuesta de UTBGO: ${widget.video.title}\n${widget.video.description}\nhttps://utbgo.app/content/${widget.video.id}';
+        'Participa en esta encuesta de UTBGO: ${widget.video.title}\n${widget.video.description}\nhttps://utbgo-api.redpebble-49efc34a.eastus2.azurecontainerapps.io/video/${widget.video.id}';
     Share.share(shareText);
   }
 

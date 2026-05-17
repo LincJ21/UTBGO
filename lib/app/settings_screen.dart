@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'privacy_policy_screen.dart';
 import 'terms_of_service_screen.dart';
+import 'account_management_screen.dart';
 
 // ─────────────────────────────────────────────────────────────
 //  PANTALLA DE CONFIGURACIÓN
@@ -300,7 +301,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _navigateToAccountManagement(BuildContext context) {
-    _showComingSoon(context, 'Gestión de cuenta');
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => AccountManagementScreen(
+          onAccountDeactivated: widget.onLogout,
+        ),
+      ),
+    );
   }
 
   void _showComingSoon(BuildContext context, String feature) {

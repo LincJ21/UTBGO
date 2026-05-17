@@ -1242,3 +1242,179 @@ func handleTriggerRetrain(c *gin.Context) {
 
 	RespondSuccess(c, gin.H{"message": "Entrenamiento neuronal en progreso", "actor_id": userID})
 }
+
+// handleGetVideoV2 obtiene un único video por su ID.
+func handleGetVideoV2(c *gin.Context) {
+	videoID, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		RespondError(c, ErrInvalidInput("id", "ID de video inválido"))
+		return
+	}
+
+	videos, err := Repos.Videos.GetByIDs(c.Request.Context(), []int{videoID})
+	if err != nil {
+		Logger.Error("Error obteniendo video por ID", "error", err, "video_id", videoID)
+		RespondError(c, ErrDatabase("Error al obtener el video"))
+		return
+	}
+
+	if len(videos) == 0 {
+		RespondError(c, ErrNotFound("Video"))
+		return
+	}
+
+	// Como GetByIDs puede no llenar "IsLiked" y "IsBookmarked" porque es para uso general,
+	// si tenemos un usuario logueado, podemos llenar esos datos extraídos manualmente,
+	// o el frontend asume false y los actualiza. Para una experiencia fluida, el feed ya hace esto.
+	// Por ahora devolvemos el video tal cual.
+	video := videos[0]
+
+	// Opcional: si hay un usuario logueado, podríamos verificar si le dio like.
+	userID := getUserIDFromContext(c)
+	if userID != 0 {
+		// Se podría hacer una consulta rápida o dejar que el frontend maneje el estado
+		// Para simplificar, devolvemos el modelo directo.
+	}
+
+	RespondSuccess(c, video)
+}
+
+// --- Gestión de Cuenta ---
+
+// handleChangePassword permite al usuario cambiar su contraseña.
+// Requiere la contraseña actual para verificar la identidad (defensa contra session hijacking).
+func handleChangePassword(c *gin.Context) {
+	userID := getUserIDFromContext(c)
+	if userID == 0 {
+		RespondError(c, ErrUnauthorized())
+		return
+	}
+
+	var req struct {
+		CurrentPassword string `json:"current_password" binding:"required"`
+		NewPassword     string `json:"new_password" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		RespondError(c, ErrValidation("Se requiere la contraseña actual y la nueva"))
+		return
+	}
+
+	// Validar longitud de la nueva contraseña
+	if len(req.NewPassword) < 8 {
+		RespondError(c, ErrInvalidInput("new_password", "La nueva contraseña debe tener al menos 8 caracteres"))
+		return
+	}
+
+	// Obtener el hash actual de la BD
+	var currentHash string
+	err := DB.QueryRowContext(c.Request.Context(),
+		"SELECT COALESCE(password_hash, '') FROM usuarios WHERE id_usuario = $1", userID).Scan(&currentHash)
+	if err != nil {
+		Logger.Error("Error obteniendo hash de contraseña", "error", err, "user_id", userID)
+		RespondError(c, ErrInternal())
+		return
+	}
+
+	// Usuarios registrados via OIDC (Google/Microsoft) no tienen contraseña local
+	if currentHash == "" || currentHash == "google-login" || currentHash == "microsoft-login" {
+		RespondError(c, ErrForbidden("Tu cuenta usa inicio de sesión social. No puedes cambiar la contraseña desde aquí."))
+		return
+	}
+
+	// Verificar contraseña actual (bcrypt es timing-safe por diseño)
+	if !CheckPassword(req.CurrentPassword, currentHash) {
+		RespondError(c, ErrInvalidCredentials())
+		return
+	}
+
+	// Hashear la nueva contraseña
+	newHash, err := HashPassword(req.NewPassword)
+	if err != nil {
+		Logger.Error("Error hasheando nueva contraseña", "error", err, "user_id", userID)
+		RespondError(c, ErrInternal())
+		return
+	}
+
+	// Actualizar en la BD
+	_, err = DB.ExecContext(c.Request.Context(),
+		"UPDATE usuarios SET password_hash = $1 WHERE id_usuario = $2", newHash, userID)
+	if err != nil {
+		Logger.Error("Error actualizando contraseña", "error", err, "user_id", userID)
+		RespondError(c, ErrDatabase("Error al actualizar la contraseña"))
+		return
+	}
+
+	Logger.Info("Contraseña actualizada", "user_id", userID)
+	RespondSuccess(c, gin.H{"message": "Contraseña actualizada correctamente"})
+}
+
+// handleDeactivateAccount desactiva la cuenta del usuario (soft delete).
+// Requiere confirmación con la contraseña actual para prevenir desactivaciones accidentales.
+// No elimina datos — cambia el estado del usuario a 'desactivado'.
+func handleDeactivateAccount(c *gin.Context) {
+	userID := getUserIDFromContext(c)
+	if userID == 0 {
+		RespondError(c, ErrUnauthorized())
+		return
+	}
+
+	var req struct {
+		Password string `json:"password" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		RespondError(c, ErrValidation("Se requiere la contraseña para confirmar la desactivación"))
+		return
+	}
+
+	// Obtener hash actual
+	var currentHash string
+	err := DB.QueryRowContext(c.Request.Context(),
+		"SELECT COALESCE(password_hash, '') FROM usuarios WHERE id_usuario = $1", userID).Scan(&currentHash)
+	if err != nil {
+		Logger.Error("Error obteniendo hash para desactivación", "error", err, "user_id", userID)
+		RespondError(c, ErrInternal())
+		return
+	}
+
+	// Para usuarios OIDC, aceptar cualquier confirmación (no tienen contraseña local)
+	isOIDCUser := currentHash == "" || currentHash == "google-login" || currentHash == "microsoft-login"
+
+	if !isOIDCUser {
+		if !CheckPassword(req.Password, currentHash) {
+			RespondError(c, ErrInvalidCredentials())
+			return
+		}
+	}
+
+	// Obtener el ID del estado 'desactivado' (crearlo si no existe)
+	var deactivatedStateID int
+	err = DB.QueryRowContext(c.Request.Context(),
+		"SELECT id_estado_usuario FROM estados_usuario WHERE codigo = 'desactivado'").Scan(&deactivatedStateID)
+	if err != nil {
+		// Crear el estado si no existe
+		err = DB.QueryRowContext(c.Request.Context(),
+			`INSERT INTO estados_usuario (codigo, nombre, descripcion) 
+			 VALUES ('desactivado', 'Desactivado', 'Cuenta desactivada por el usuario') 
+			 ON CONFLICT (codigo) DO UPDATE SET codigo = EXCLUDED.codigo
+			 RETURNING id_estado_usuario`).Scan(&deactivatedStateID)
+		if err != nil {
+			Logger.Error("Error creando estado 'desactivado'", "error", err)
+			RespondError(c, ErrInternal())
+			return
+		}
+	}
+
+	// Cambiar el estado del usuario
+	_, err = DB.ExecContext(c.Request.Context(),
+		"UPDATE usuarios SET id_estado_usuario = $1 WHERE id_usuario = $2", deactivatedStateID, userID)
+	if err != nil {
+		Logger.Error("Error desactivando cuenta", "error", err, "user_id", userID)
+		RespondError(c, ErrDatabase("Error al desactivar la cuenta"))
+		return
+	}
+
+	Logger.Info("Cuenta desactivada", "user_id", userID)
+	RespondSuccess(c, gin.H{"message": "Tu cuenta ha sido desactivada. Puedes contactar soporte para reactivarla."})
+}

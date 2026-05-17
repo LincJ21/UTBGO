@@ -396,6 +396,24 @@ func main() {
 		c.JSON(http.StatusOK, gin.H{"status": "healthy", "db": "connected"})
 	})
 
+	// --- Android App Links Verification ---
+	// Sirve el archivo assetlinks.json para que Android verifique que esta app
+	// es la dueña legítima del dominio y abra los deep links automáticamente
+	// sin mostrar el diálogo "¿Abrir con Chrome o con UTBGO?".
+	router.GET("/.well-known/assetlinks.json", func(c *gin.Context) {
+		c.Header("Content-Type", "application/json")
+		c.String(http.StatusOK, `[{
+			"relation": ["delegate_permission/common.handle_all_urls"],
+			"target": {
+				"namespace": "android_app",
+				"package_name": "com.example.flutter_practica",
+				"sha256_cert_fingerprints": [
+					"61:DE:32:84:36:C3:8B:E3:CA:D8:A6:D9:6E:4F:F2:F3:AA:78:C0:27:51:C7:EA:28:78:21:30:22:E5:61:72:96"
+				]
+			}
+		}]`)
+	})
+
 	// --- Configuración de CORS ---
 	// En producción, configura AllowOrigins con dominios específicos.
 	allowedOrigins := os.Getenv("ALLOWED_ORIGINS")
@@ -486,6 +504,7 @@ func main() {
 			videos.POST("/:id/repost", AuthMiddleware(), handleToggleRepost)
 			videos.GET("/:id/comments", handleGetCommentsV2)
 			videos.POST("/:id/comments", AuthMiddleware(), handleCreateCommentV2)
+			videos.GET("/:id", OptionalAuthMiddleware(), handleGetVideoV2)
 		}
 
 		// Comentarios (rutas directas)
@@ -532,6 +551,14 @@ func main() {
 			profile.POST("/public/:id/follow", AuthMiddleware(), handleFollowUser)
 			profile.DELETE("/public/:id/follow", AuthMiddleware(), handleUnfollowUser)
 			profile.GET("/public/:id/connections", AuthMiddleware(), handleGetConnections)
+		}
+
+		// Gestión de Cuenta
+		account := v1.Group("/account")
+		account.Use(AuthMiddleware())
+		{
+			account.PATCH("/password", handleChangePassword)
+			account.POST("/deactivate", handleDeactivateAccount)
 		}
 
 		// --- Flashcards ---
